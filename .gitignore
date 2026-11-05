@@ -1,0 +1,37 @@
+# Local agent
+.agents/
+kanban/
+AGENTS.local.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python and uv
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches and reports
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# IDEs and editors
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

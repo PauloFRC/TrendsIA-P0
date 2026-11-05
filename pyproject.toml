@@ -1,0 +1,55 @@
+[project]
+name = "diff-analyzer"
+version = "0.1.0"
+description = "CLI que envia um diff (arquivo, stdin ou repositório git) para um LLM e imprime a análise."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openai==3.46.0",
+    "pydantic-settings==2.16.2",
+    "unidiff==1.0.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "S", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib", "--strict-markers", "-m", "not live"]
+markers = ["live: requires a real LLM endpoint; excluded by default, run with -m live"]
+
+[tool.coverage.run]
+source = ["diff_analyzer"]
+branch = true
+
+[tool.coverage.report]
+# "Over 90%": coverage fails when round(total, 2) < 90.01, so exactly 90.00% fails.
+fail_under = 90.01
+precision = 2
+show_missing = true
+
+[dependency-groups]
+dev = [
+    "httpx2==2.16.0",
+    "mypy==2.4.1",
+    "pytest==9.2.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.4",
+]
