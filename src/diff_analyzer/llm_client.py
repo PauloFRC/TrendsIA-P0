@@ -71,12 +71,17 @@ class OpenAIClient:
                 f"O LLM em {_safe_url(settings.base_url)} recusou a credencial "
                 f"(HTTP {exc.status_code}, {type(exc).__name__})."
             ) from None
-        except openai.OpenAIError as exc:
-            status = f" HTTP {exc.status_code}" if isinstance(exc, openai.APIStatusError) else ""
+        # Input larger than the model context.
+        except openai.BadRequestError as exc:
+            if exc.code != "context_length_exceeded":
+                raise _status_error(settings.model, exc) from None
             raise LLMResponseError(
-                f"O LLM retornou erro{status} para o modelo {settings.model} "
-                f"({type(exc).__name__})."
+                f"O servidor não oferece contexto suficiente para este diff com o modelo "
+                f"{settings.model} (HTTP {exc.status_code}). Use um diff menor ou um "
+                "modelo com mais contexto."
             ) from None
+        except openai.OpenAIError as exc:
+            raise _status_error(settings.model, exc) from None
         # The SDK parses a JSON body without catching decode errors.
         except json.JSONDecodeError:
             raise _unusable_response(settings.model) from None
@@ -90,6 +95,13 @@ class OpenAIClient:
         if not isinstance(content, str):
             raise _unusable_response(settings.model) from None
         return LLMResponse(content, finish_reason)
+
+
+def _status_error(model: str, exc: openai.OpenAIError) -> LLMResponseError:
+    status = f" HTTP {exc.status_code}" if isinstance(exc, openai.APIStatusError) else ""
+    return LLMResponseError(
+        f"O LLM retornou erro{status} para o modelo {model} ({type(exc).__name__})."
+    )
 
 
 def _unusable_response(model: str) -> LLMResponseError:
