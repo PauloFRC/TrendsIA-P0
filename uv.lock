@@ -108,6 +108,7 @@ source = { editable = "." }
 dependencies = [
     { name = "openai" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "unidiff" },
 ]
 
@@ -124,6 +125,7 @@ dev = [
 requires-dist = [
     { name = "openai", specifier = "==3.46.0" },
     { name = "pydantic-settings", specifier = "==2.16.2" },
+    { name = "python-dotenv", specifier = "==1.2.4" },
     { name = "unidiff", specifier = "==1.0.1" },
 ]
 
