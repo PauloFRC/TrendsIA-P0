@@ -27,8 +27,9 @@ FILE_DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
 
 @pytest.fixture(autouse=True)
 def in_tmp_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # No .env, so settings fall back to the code defaults.
+    # LLM_MODEL has no default.
     monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("LLM_MODEL=modelo:teste\n", encoding="utf-8")
 
 
 @pytest.fixture

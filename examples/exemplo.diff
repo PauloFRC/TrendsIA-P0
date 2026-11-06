@@ -1,0 +1,18 @@
+diff --git a/app/sales.py b/app/sales.py
+index 3b18e51..9c2d4f7 100644
+--- a/app/sales.py
++++ b/app/sales.py
+@@ -1,6 +1,13 @@
+ """Simple statistics over the day's sales."""
+ 
+ 
+ def total(sales):
+     return sum(sale["amount"] for sale in sales)
+ 
++
++def average(sales):
++    return total(sales) / len(sales)
++
++
++def apply_discount(amount, percent):
++    return amount - amount * percent

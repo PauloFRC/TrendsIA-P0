@@ -91,14 +91,14 @@ def test_request_carries_model_messages_and_sampling_settings() -> None:
 
 @pytest.mark.parametrize("finish_reason", ["stop", "length"])
 def test_response_is_parsed_into_text_and_finish_reason(finish_reason: str) -> None:
-    settings = Settings(auth="none")
+    settings = Settings(model="modelo:3b", auth="none")
     client = client_for(settings, lambda _: completion("Sem problemas.", finish_reason))
 
     assert client.complete(MESSAGES) == LLMResponse("Sem problemas.", finish_reason)
 
 
 def test_null_content_is_returned_as_empty_text() -> None:
-    settings = Settings(auth="none")
+    settings = Settings(model="modelo:3b", auth="none")
     client = client_for(settings, lambda _: completion(None))
 
     assert client.complete(MESSAGES) == LLMResponse("", "stop")
@@ -118,7 +118,7 @@ def test_api_key_comes_from_settings_in_required_mode_and_is_a_placeholder_in_no
         headers.append(request.headers.get("Authorization"))
         return completion()
 
-    settings = Settings.model_validate({"auth": auth, "api_key": SENTINEL})
+    settings = Settings.model_validate({"model": "modelo:3b", "auth": auth, "api_key": SENTINEL})
     client_for(settings, handler).complete(MESSAGES)
 
     assert headers == [f"Bearer {bearer}"]
@@ -131,7 +131,7 @@ def test_connection_failure_is_an_unreachable_error(monkeypatch: pytest.MonkeyPa
     def handler(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("connection refused", request=request)
 
-    settings = Settings(base_url="http://llm.test:8080/v1", auth="none")
+    settings = Settings(base_url="http://llm.test:8080/v1", model="modelo:3b", auth="none")
     with pytest.raises(LLMUnreachableError) as excinfo:
         client_for(settings, handler).complete(MESSAGES)
 
@@ -149,7 +149,7 @@ def test_timeout_is_an_unreachable_error(monkeypatch: pytest.MonkeyPatch) -> Non
         raise httpx2.ReadTimeout("timed out", request=request)
 
     with pytest.raises(LLMUnreachableError, match="APITimeoutError"):
-        client_for(Settings(auth="none"), handler).complete(MESSAGES)
+        client_for(Settings(model="modelo:3b", auth="none"), handler).complete(MESSAGES)
 
 
 def test_http_error_is_a_response_error_naming_model_and_status() -> None:
@@ -284,6 +284,7 @@ def test_error_messages_never_carry_secrets_bodies_headers_or_url_credentials(
     monkeypatch.setattr("time.sleep", lambda _: None)
     settings = Settings(
         base_url=f"http://user:{SENTINEL}@llm.test/v1?token={SENTINEL}",
+        model="modelo:3b",
         auth="required",
         api_key=SecretStr(SENTINEL),
     )

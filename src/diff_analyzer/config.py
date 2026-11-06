@@ -26,6 +26,7 @@ _HTTP_URL: TypeAdapter[HttpUrl] = TypeAdapter(HttpUrl)
 # Fixed text since messages must not echo the value that failed.
 _REASONS = {
     "base_url": "use uma URL http ou https",
+    "model": "informe o nome do modelo do provedor",
     "auth": "use required ou none",
     "data_egress": "use local ou external",
     "timeout_connect": "use um número de segundos maior que 0",
@@ -72,8 +73,8 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    base_url: str = "http://localhost:11434/v1"
-    model: str = "qwen2.5-coder:7b"
+    base_url: str = "https://api.openai.com/v1"
+    model: str
     auth: AuthMode = "required"
     api_key: SecretStr = SecretStr("")
     data_egress: DataEgress = "external"

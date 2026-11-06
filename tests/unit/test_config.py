@@ -28,11 +28,13 @@ def load_error(text: str) -> ConfigurationError:
     return excinfo.value
 
 
-def test_without_env_file_all_defaults_apply() -> None:
+def test_keys_missing_from_env_use_code_defaults() -> None:
+    write_env("LLM_MODEL=modelo:teste\n")
+
     settings = load_settings()
 
-    assert settings.base_url == "http://localhost:11434/v1"
-    assert settings.model == "qwen2.5-coder:7b"
+    assert settings.base_url == "https://api.openai.com/v1"
+    assert settings.model == "modelo:teste"
     assert settings.auth == "required"
     assert settings.api_key.get_secret_value() == ""
     assert settings.data_egress == "external"
@@ -53,17 +55,28 @@ def test_env_value_overrides_default_and_missing_key_keeps_default() -> None:
     assert settings.auth == "none"
     assert settings.timeout_read == 30.5
     assert settings.timeout_connect == 5
-    assert settings.base_url == "http://localhost:11434/v1"
+    assert settings.base_url == "https://api.openai.com/v1"
+
+
+@pytest.mark.parametrize("text", ["", "LLM_MODEL=\n", "LLM_AUTH=none\n"])
+def test_model_has_no_default_and_must_be_set_in_env(
+    monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    monkeypatch.setenv("LLM_MODEL", "from-environ")
+
+    message = str(load_error(text))
+
+    assert "LLM_MODEL (informe o nome do modelo do provedor)" in message
 
 
 def test_process_environment_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "from-environ")
     monkeypatch.setenv("LLM_API_KEY", SENTINEL)
-    write_env("LLM_AUTH=none\n")
+    write_env("LLM_MODEL=modelo:teste\nLLM_AUTH=none\n")
 
     settings = load_settings()
 
-    assert settings.model == "qwen2.5-coder:7b"
+    assert settings.model == "modelo:teste"
     assert settings.api_key.get_secret_value() == ""
 
 
@@ -77,18 +90,17 @@ def test_env_file_does_not_interpolate_process_environment(
 
 
 def test_empty_value_falls_back_to_default() -> None:
-    write_env("LLM_MODEL=\nLLM_TIMEOUT_READ=\nLLM_API_KEY=\n")
+    write_env("LLM_MODEL=modelo:teste\nLLM_TIMEOUT_READ=\nLLM_API_KEY=\n")
 
     settings = load_settings()
 
-    assert settings.model == "qwen2.5-coder:7b"
     assert settings.timeout_read == 120
     assert settings.api_key.get_secret_value() == ""
 
 
 def test_range_boundaries_are_accepted() -> None:
     write_env(
-        "LLM_TIMEOUT_CONNECT=0.1\nLLM_TEMPERATURE=2\nLLM_SEED=0\n"
+        "LLM_MODEL=modelo:teste\nLLM_TIMEOUT_CONNECT=0.1\nLLM_TEMPERATURE=2\nLLM_SEED=0\n"
         "LLM_MAX_INPUT_CHARS=1\nLLM_MAX_OUTPUT_TOKENS=1\n"
     )
 
@@ -102,7 +114,7 @@ def test_range_boundaries_are_accepted() -> None:
 
 
 def test_base_url_is_kept_as_written() -> None:
-    write_env("LLM_BASE_URL=https://gpu-box:8000\n")
+    write_env("LLM_MODEL=modelo:teste\nLLM_BASE_URL=https://gpu-box:8000\n")
 
     assert load_settings().base_url == "https://gpu-box:8000"
 
@@ -183,7 +195,7 @@ def test_secret_never_leaks_through_configuration_error() -> None:
 
 
 def test_api_key_is_kept_and_masked() -> None:
-    write_env(f"LLM_API_KEY={SENTINEL}\n")
+    write_env(f"LLM_MODEL=modelo:teste\nLLM_API_KEY={SENTINEL}\n")
 
     settings = load_settings()
 
