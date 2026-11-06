@@ -2,7 +2,7 @@
 
 CLI que envia um diff (arquivo `.diff`, entrada padrão ou repositório git) para um LLM via API REST compatível com OpenAI e imprime a análise no terminal.
 
-> **Estado atual:** estrutura inicial do projeto e ambiente. A CLI ainda não está implementada; os módulos em `src/diff_analyzer/` contêm apenas a descrição de sua responsabilidade.
+> **Estado atual:** a CLI ainda não está implementada. Configuração, leitura do diff, prompt e cliente LLM já estão implementados e têm testes unitários.
 
 ## Requisitos
 
@@ -37,8 +37,6 @@ Executa, nesta ordem, e para na primeira falha:
 5. `pytest` com cobertura acima de 90% (`fail_under = 90.01` com 2 casas decimais: exatamente 90,00% falha);
 6. `gitleaks`: procura segredos no histórico do git e nas alterações staged e não staged (arquivos não rastreados só são verificados depois de `git add`).
 
-Enquanto não houver testes, o script falha na etapa do `mypy` (`tests/` sem arquivos Python) e, depois dela, na do `pytest` (cobertura 0%).
-
 ## Estrutura
 
 ```text
@@ -53,6 +51,7 @@ src/diff_analyzer/
   prompts/
     default.md     # prompt padrão
 tests/
+  fakes.py         # FakeLLMClient, usado nos testes sem chamada real ao LLM
   unit/
   e2e/
   fixtures/

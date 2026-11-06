@@ -33,6 +33,7 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 addopts = ["--import-mode=importlib", "--strict-markers", "-m", "not live"]
 markers = ["live: requires a real LLM endpoint; excluded by default, run with -m live"]
 
