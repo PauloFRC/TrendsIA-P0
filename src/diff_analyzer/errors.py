@@ -25,7 +25,7 @@ class DiffAnalyzerError(Exception):
 
 
 class InputError(DiffAnalyzerError):
-    """Invalid or empty input diff."""
+    """Invalid or empty input: the diff or the prompt."""
 
     exit_code = 3
 
