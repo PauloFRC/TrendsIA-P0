@@ -1,103 +1,155 @@
 # TrendsIA-P0: diff-analyzer
 
-CLI que envia um diff (arquivo `.diff` ou repositório git) para um LLM via API REST compatível com OpenAI e imprime a análise no terminal.
+CLI que envia um diff (arquivo `.diff` ou repositório git) para um LLM compatível com a API da OpenAI e imprime um resumo da mudança, os arquivos alterados, possíveis problemas e sugestões.
 
-> **Estado atual:** a CLI ainda não está implementada. Configuração, leitura do diff, prompt e cliente LLM já estão implementados e têm testes unitários.
+## Quickstart
+
+```bash
+uv sync --frozen        # instala as versões exatas de uv.lock
+cp .env.example .env    # preencha LLM_MODEL e LLM_API_KEY
+uv run --frozen diff-analyzer examples/exemplo.diff
+```
 
 ## Requisitos
 
-| Ferramenta | Versão | Uso |
-| ---------- | ------ | --- |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | 0.11.17 ou superior (< 0.12) | Ambiente, dependências e execução |
-| Python | 3.12 (fixado em `.python-version`) | Instalado automaticamente pelo uv se não existir |
-| [gitleaks](https://github.com/gitleaks/gitleaks#installing) | 8.19 ou superior (testado com 8.30.1) | Apenas para `scripts/validate.sh` |
-| git | qualquer | Opcional: necessário apenas para ler o diff de um repositório |
-
-## Configuração do ambiente
-
-```bash
-uv sync --frozen        # instala as versões exatas de uv.lock em .venv/
-cp .env.example .env    # configuração local; .env está no .gitignore
-```
-
-A configuração vem somente do arquivo `.env` no diretório atual; o que não estiver nele usa o padrão do código. Variáveis de ambiente do processo são ignoradas. Cada chave está descrita em `.env.example`. Nunca coloque uma credencial real em `.env.example` ou em qualquer arquivo versionado.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.11.17 ou superior (< 0.12).
+- Um endpoint de LLM compatível com a API de Chat Completions da OpenAI.
+- git, para analisar um repositório.
+- [gitleaks](https://github.com/gitleaks/gitleaks#installing) 8.19 ou superior, para `scripts/validate.sh`.
 
 ## Acesso ao LLM
 
-A CLI funciona com qualquer provedor ou servidor que ofereça a API de Chat Completions da OpenAI. O endpoint, o modelo e a credencial ficam no `.env`.
+A configuração vem do `.env`. Por isso, rode a CLI a partir da pasta do projeto. Cada chave está descrita em `.env.example`.
 
-### Provedor com chave de API
-
-O `.env.example` já vem configurado para a OpenAI; no `.env`, preencha `LLM_MODEL` e `LLM_API_KEY`:
+Provedor com chave de API (padrão do `.env.example`):
 
 ```dotenv
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=<modelo disponível na sua conta>
 LLM_AUTH=required
 LLM_API_KEY=<sua chave>
-LLM_DATA_EGRESS=external
 ```
 
-`LLM_MODEL` não tem valor padrão: sem ele, a CLI termina com código 4 e a mensagem "Configuração inválida no .env: LLM_MODEL (informe o nome do modelo do provedor).". Para outro provedor compatível, use em `LLM_BASE_URL` e `LLM_MODEL` os valores da documentação dele.
+Servidor sem credencial: use `LLM_AUTH=none`, deixe `LLM_API_KEY` vazio e ajuste `LLM_BASE_URL` e `LLM_MODEL` para o servidor.
 
-- A chave fica somente no `.env`, que está no `.gitignore`. Nunca a coloque em `.env.example`, no código ou em um commit. A variável de ambiente `OPENAI_API_KEY` é ignorada.
-- `LLM_DATA_EGRESS=external`: o diff sai desta máquina e é enviado ao provedor. Não analise código que não pode sair da sua rede.
-- Esta configuração não foi executada com uma chave real neste projeto.
+- A chave fica somente no `.env`. Nunca a coloque em `.env.example`, no código ou em um commit.
+- O tamanho do contexto depende do provedor ou servidor.
 
-### Endpoint sem credencial
-
-Para um servidor que não exige chave, por exemplo na sua máquina ou na sua rede, use `LLM_AUTH=none` e deixe `LLM_API_KEY` vazio. Se o diff não sai da máquina, use `LLM_DATA_EGRESS=local`. Ajuste `LLM_BASE_URL` e `LLM_MODEL` para o seu servidor.
-
-### Contexto do modelo
-
-`LLM_MAX_INPUT_CHARS` (padrão 60000) só limita o tamanho do diff em caracteres. Ele não configura nem garante que o diff caiba no contexto do modelo: 60000 caracteres equivalem a cerca de 15000 a 20000 tokens, sem contar o prompt e a resposta.
-
-O tamanho do contexto é definido pelo provedor ou servidor, não pela CLI; consulte a documentação dele. Para diffs perto do limite padrão, use um modelo e um servidor com contexto de pelo menos 32K tokens. Quando a entrada não cabe no contexto:
-
-- servidores que recusam o pedido, como a API da OpenAI, fazem a CLI terminar com código 7 e a mensagem "O servidor do LLM não oferece contexto suficiente para este diff com o modelo ...";
-- alguns servidores cortam a entrada sem avisar: a resposta chega sem erro e a CLI termina com código 0, mas o modelo não recebeu o pedido inteiro. A CLI não consegue detectar esse caso, porque a API não informa o corte nem o tamanho do contexto.
-
-Possíveis sinais de que a entrada foi cortada: a resposta não segue o formato do prompt (por exemplo, vem em inglês ou em JSON em vez das seções em português) ou fala só dos últimos arquivos do diff. Esses sinais não provam o corte: um modelo também pode ignorar as instruções de formato com a entrada inteira. Nos testes deste projeto, um pedido grande demais chegou encurtado ao modelo e o servidor pode ter descartado as instruções; um pedido menor seguiu o formato. Na dúvida, aumente o contexto no servidor ou analise um diff menor, por exemplo um único commit com `--commit` ou um intervalo menor com `--range`.
-
-### Reprodutibilidade
-
-Cada pedido envia `temperature=0` e `seed` (`LLM_TEMPERATURE` e `LLM_SEED`, padrão 42), e o modelo é o nome exato em `LLM_MODEL`; quando o provedor oferecer, use um nome com versão fixa. Mesmo assim, a mesma entrada não tem garantia de gerar a mesma resposta: o resultado pode mudar com a versão do modelo ou do servidor, o hardware e pedidos simultâneos.
-
-## Validação
+## Execução
 
 ```bash
-./scripts/validate.sh
+uv run --frozen diff-analyzer examples/exemplo.diff         # arquivo .diff
+uv run --frozen diff-analyzer .                             # mudanças não commitadas (git diff HEAD)
+uv run --frozen diff-analyzer . --staged                    # só as mudanças preparadas
+uv run --frozen diff-analyzer . --commit HEAD               # um commit
+uv run --frozen diff-analyzer . --range HEAD~3..HEAD        # intervalo de commits
+uv run --frozen diff-analyzer "$PWD" --commit HEAD          # outro repositório: troque "$PWD" pelo caminho dele
 ```
 
-Executa, nesta ordem, e para na primeira falha:
+O prompt padrão está em `src/diff_analyzer/prompts/default.md`; edite-o para mudar todas as execuções. Para uma execução só:
 
-1. `uv lock --check`: `uv.lock` corresponde ao `pyproject.toml`;
-2. `ruff check`: lint;
-3. `ruff format --check`: formatação;
-4. `mypy`: checagem de tipos (modo estrito) em `src/` e `tests/`;
-5. `pytest` com cobertura acima de 90% (`fail_under = 90.01` com 2 casas decimais: exatamente 90,00% falha);
-6. `gitleaks`: procura segredos no histórico do git e nas alterações staged e não staged (arquivos não rastreados só são verificados depois de `git add`).
+```bash
+uv run --frozen diff-analyzer . --commit HEAD -p "Liste os riscos de segurança."
+cp src/diff_analyzer/prompts/default.md meu-prompt.md
+uv run --frozen diff-analyzer . --commit HEAD --prompt-file meu-prompt.md
+```
 
-## Estrutura
+A CLI não grava arquivos. Para salvar a análise, use:
+
+```bash
+uv run --frozen diff-analyzer . --commit HEAD > analise.md
+```
+
+Veja todas as opções com `uv run --frozen diff-analyzer --help`.
+
+## Exemplo de entrada e saída
+
+Entrada (`examples/exemplo.diff`):
+
+```diff
+diff --git a/app/sales.py b/app/sales.py
+index 3b18e51..9c2d4f7 100644
+--- a/app/sales.py
++++ b/app/sales.py
+@@ -1,6 +1,13 @@
+ """Simple statistics over the day's sales."""
+ 
+ 
+ def total(sales):
+     return sum(sale["amount"] for sale in sales)
+ 
++
++def average(sales):
++    return total(sales) / len(sales)
++
++
++def apply_discount(amount, percent):
++    return amount - amount * percent
+```
+
+Saída real, gerada com o modelo `qwen2.5-coder:7b` em um servidor local:
 
 ```text
-src/diff_analyzer/
-  cli.py           # argumentos (argparse), códigos de saída, mensagens em stderr
-  service.py       # orquestração: origem do diff -> validação -> prompt -> LLM
-  diff_source.py   # leitura de arquivo ou repositório git + validação do diff
-  prompt.py        # prompt padrão, --prompt-file ou --prompt; montagem das mensagens
-  llm_client.py    # protocolo LLMClient + implementação compatível com OpenAI
-  config.py        # configuração (.env > padrões)
-  errors.py        # hierarquia de exceções de domínio
-  prompts/
-    default.md     # prompt padrão
-tests/
-  fakes.py         # FakeLLMClient, usado nos testes sem chamada real ao LLM
-  unit/
-  e2e/
-  fixtures/
-scripts/
-  validate.sh
-examples/
-  exemplo.diff     # diff de exemplo para testar a CLI
+1. **Resumo**: A mudança adiciona duas novas funções ao arquivo `sales.py`: `average` para calcular a média dos valores de vendas e `apply_discount` para aplicar um desconto a um valor.
+
+2. **Arquivos alterados**:
+   - `app/sales.py`: Este arquivo foi modificado para incluir as duas novas funções.
+
+3. **Possíveis problemas**: 
+   - Nenhum problema identificado.
+
+4. **Sugestões**:
+   - Adicionar um tratamento de caso onde a lista de vendas está vazia no cálculo da média (`average`), para evitar uma divisão por zero.
+   - Considerar adicionar um tipo de verificação para garantir que os valores de desconto sejam válidos (por exemplo, entre 0 e 1).
 ```
+
+## Códigos de saída
+
+| Código | Significado |
+| ------ | ----------- |
+| 0 | Sucesso |
+| 2 | Argumento inválido |
+| 3 | Entrada inválida ou vazia (arquivo inexistente, diff vazio, referência git inválida) |
+| 4 | Configuração inválida no `.env` ou git ausente |
+| 5 | Credencial recusada (HTTP 401/403) |
+| 6 | LLM inacessível ou tempo esgotado |
+| 7 | Erro do LLM: modelo inexistente, contexto insuficiente para o diff, 429 ou 5xx |
+
+## Testes
+
+```bash
+uv run --frozen pytest
+./scripts/validate.sh   # lockfile, lint, formatação, mypy, testes com cobertura > 90%, gitleaks
+```
+
+## Problema
+
+Revisar uma mudança ou entender o que um commit fez exige ler o diff linha a linha. Em diffs com vários arquivos isso toma tempo, e é fácil não perceber problemas ou o propósito das mudanças.
+
+## Quem se beneficia
+
+Desenvolvedores que revisam código, próprio ou de outra pessoa, ou que precisam entender o que uma mudança fez.
+
+## Por que um LLM
+
+Linters e checadores de tipo acham violações de regras fixas, mas nenhum explica a mudança ou aponta erros. Um LLM resume o diff, aponta riscos, e o formato da resposta muda pelo prompt.
+
+## Como funciona
+
+1. Lê a configuração do `.env`.
+2. Lê o diff do arquivo ou do repositório (via `git`).
+3. Envia o prompt como mensagem de sistema e o diff, entre `<diff>` e `</diff>`.
+4. Imprime a resposta.
+
+## Limites do projeto
+
+- Só analisa e não altera código.
+- Um diff por execução, sem divisão de diffs grandes.
+- Não guarda nada além dos prompts em markdown.
+
+## Limitações conhecidas
+
+- **O modelo erra e omite.** Modelos podem não entender o código e os motivos das mudanças, especialmente por não ter o contexto do projeto inteiro, mas apenas o diff.
+- **Corte silencioso.** Alguns servidores cortam uma entrada maior que o contexto sem avisar. O sistema não detecta isso e a resposta pode ignorar parte do diff ou o prompt.
+- **Validações ausentes:** o conteúdo não é validado como diff; uma resposta cortada ou vazia não gera aviso.
+- **Injeção de prompt.** Texto dentro do diff ainda pode mudar a resposta do modelo.
