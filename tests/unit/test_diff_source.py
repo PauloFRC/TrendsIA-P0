@@ -1,6 +1,5 @@
-"""Tests for reading the diff from a file, stdin or git repository."""
+"""Tests for reading the diff from a file or git repository."""
 
-import io
 import os
 import shutil
 import subprocess
@@ -15,11 +14,6 @@ from diff_analyzer.errors import ConfigurationError, InputError
 
 GIT = shutil.which("git") or "git"
 FILE_DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
-
-
-class FailingStdin(io.BytesIO):
-    def read(self, size: int | None = -1) -> bytes:
-        raise OSError(5, "Input/output error")
 
 
 def traceback_text(exc: BaseException) -> str:
@@ -79,12 +73,6 @@ def test_file_source_returns_its_content(tmp_path: Path) -> None:
     assert read_diff(str(diff_file)) == FILE_DIFF
 
 
-def test_dash_reads_stdin() -> None:
-    stdin = io.BytesIO(FILE_DIFF.encode())
-
-    assert read_diff("-", stdin=stdin) == FILE_DIFF
-
-
 def test_invalid_utf8_is_replaced(tmp_path: Path) -> None:
     diff_file = tmp_path / "latin1.diff"
     diff_file.write_bytes(b"+caf\xe9\n")
@@ -108,16 +96,12 @@ def test_unreadable_path_is_an_input_error(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("mode", [Staged(), Commit("HEAD"), Range("a..b")])
-@pytest.mark.parametrize("source_kind", ["file", "stdin"])
-def test_git_mode_without_repository_is_an_input_error(
-    tmp_path: Path, mode: GitMode, source_kind: str
-) -> None:
+def test_git_mode_without_repository_is_an_input_error(tmp_path: Path, mode: GitMode) -> None:
     diff_file = tmp_path / "change.diff"
     diff_file.write_text(FILE_DIFF, encoding="utf-8")
-    source = str(diff_file) if source_kind == "file" else "-"
 
     with pytest.raises(InputError, match="reposit"):
-        read_diff(source, mode, stdin=io.BytesIO(FILE_DIFF.encode()))
+        read_diff(str(diff_file), mode)
 
 
 def test_working_tree_diffs_staged_and_unstaged_against_head(repo: Path) -> None:
@@ -315,49 +299,17 @@ def test_git_missing_is_a_configuration_error_and_files_still_work(
 
     assert excinfo.value.exit_code == 4
     assert read_diff(str(diff_file)) == FILE_DIFF
-    assert read_diff("-", stdin=io.BytesIO(FILE_DIFF.encode())) == FILE_DIFF
 
 
-def test_default_stdin_is_the_process_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(FILE_DIFF.encode())))
-
-    assert read_diff("-") == FILE_DIFF
-
-
-@pytest.mark.parametrize("source_kind", ["file", "stdin", "clean repository"])
+@pytest.mark.parametrize("source_kind", ["file", "clean repository"])
 def test_empty_input_is_returned_as_empty_text(
     tmp_path: Path, repo: Path, source_kind: str
 ) -> None:
     empty_file = tmp_path / "empty.diff"
     empty_file.write_bytes(b"")
-    sources = {"file": str(empty_file), "stdin": "-", "clean repository": str(repo)}
+    sources = {"file": str(empty_file), "clean repository": str(repo)}
 
-    assert read_diff(sources[source_kind], stdin=io.BytesIO(b"")) == ""
-
-
-def test_stdin_read_failure_is_an_input_error_without_cause() -> None:
-    with pytest.raises(InputError, match="stdin") as excinfo:
-        read_diff("-", stdin=FailingStdin())
-
-    assert "[Errno 5]" not in traceback_text(excinfo.value)
-
-
-def test_absent_stdin_is_an_input_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Python sets sys.stdin to None when file descriptor 0 is closed.
-    monkeypatch.setattr("sys.stdin", None)
-
-    with pytest.raises(InputError, match="stdin"):
-        read_diff("-")
-
-
-def test_closed_stdin_stream_is_an_input_error_without_cause() -> None:
-    stdin = io.BytesIO(FILE_DIFF.encode())
-    stdin.close()
-
-    with pytest.raises(InputError, match="stdin") as excinfo:
-        read_diff("-", stdin=stdin)
-
-    assert "ValueError" not in traceback_text(excinfo.value)
+    assert read_diff(sources[source_kind]) == ""
 
 
 def test_git_that_cannot_run_is_a_configuration_error_without_cause(

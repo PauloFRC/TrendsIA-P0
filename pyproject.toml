@@ -1,7 +1,7 @@
 [project]
 name = "diff-analyzer"
 version = "0.1.0"
-description = "CLI que envia um diff (arquivo, stdin ou repositório git) para um LLM e imprime a análise."
+description = "CLI que envia um diff (arquivo ou repositório git) para um LLM e imprime a análise."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -10,6 +10,9 @@ dependencies = [
     "python-dotenv==1.2.4",
     "unidiff==1.0.1",
 ]
+
+[project.scripts]
+diff-analyzer = "diff_analyzer.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.17,<0.12"]

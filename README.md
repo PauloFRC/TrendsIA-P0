@@ -1,6 +1,6 @@
 # TrendsIA-P0: diff-analyzer
 
-CLI que envia um diff (arquivo `.diff`, entrada padrão ou repositório git) para um LLM via API REST compatível com OpenAI e imprime a análise no terminal.
+CLI que envia um diff (arquivo `.diff` ou repositório git) para um LLM via API REST compatível com OpenAI e imprime a análise no terminal.
 
 > **Estado atual:** a CLI ainda não está implementada. Configuração, leitura do diff, prompt e cliente LLM já estão implementados e têm testes unitários.
 
@@ -43,7 +43,7 @@ Executa, nesta ordem, e para na primeira falha:
 src/diff_analyzer/
   cli.py           # argumentos (argparse), códigos de saída, mensagens em stderr
   service.py       # orquestração: origem do diff -> validação -> prompt -> LLM
-  diff_source.py   # leitura de arquivo, stdin ou repositório git + validação do diff
+  diff_source.py   # leitura de arquivo ou repositório git + validação do diff
   prompt.py        # prompt padrão, --prompt-file ou --prompt; montagem das mensagens
   llm_client.py    # protocolo LLMClient + implementação compatível com OpenAI
   config.py        # configuração (.env > padrões)

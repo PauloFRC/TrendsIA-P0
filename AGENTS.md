@@ -2,7 +2,7 @@
 
 ## Project
 
-`diff-analyzer`: Python CLI that sends a diff (file, stdin or git repository) to an OpenAI-compatible LLM over REST and prints the analysis. It stores nothing except the prompt markdown files.
+`diff-analyzer`: Python CLI that sends a diff (file or git repository) to an OpenAI-compatible LLM over REST and prints the analysis. It stores nothing except the prompt markdown files.
 
 - User docs (`README.md`, `RELATORIO_EXECUCAO.md`) are in Portuguese. Code, comments and commit messages are in English. Commits follow Conventional Commits.
 - Agents do not commit, except on throwaway scratch branches. Never commit to `main`, merge, tag or push: the user does that.

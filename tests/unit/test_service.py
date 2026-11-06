@@ -1,11 +1,9 @@
 """Tests for the service flow: diff and prompt in, LLM answer out."""
 
-import io
 from pathlib import Path
 
 import pytest
 
-from diff_analyzer.diff_source import STDIN_SOURCE
 from diff_analyzer.errors import InputError
 from diff_analyzer.llm_client import LLMResponse
 from diff_analyzer.prompt import InlinePrompt
@@ -33,10 +31,12 @@ def test_returns_the_llm_answer_for_the_diff_and_prompt(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("data", [b"", b"  \n\t\n"], ids=["empty", "whitespace"])
-def test_empty_diff_is_an_input_error_without_calling_the_llm(data: bytes) -> None:
+def test_empty_diff_is_an_input_error_without_calling_the_llm(tmp_path: Path, data: bytes) -> None:
+    diff_file = tmp_path / "empty.diff"
+    diff_file.write_bytes(data)
     client = FakeLLMClient()
 
     with pytest.raises(InputError, match="O diff está vazio"):
-        analyze(AnalysisRequest(STDIN_SOURCE), client, stdin=io.BytesIO(data))
+        analyze(AnalysisRequest(str(diff_file)), client)
 
     assert client.calls == []

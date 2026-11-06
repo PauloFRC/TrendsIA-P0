@@ -1,16 +1,12 @@
-"""Reads the diff from a file, stdin or git repository, and validates it."""
+"""Reads the diff from a file or git repository, and validates it."""
 
 import os
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
 
 from diff_analyzer.errors import ConfigurationError, InputError
-
-STDIN_SOURCE = "-"
 
 # Keep the output a plain, parsable whole-repository diff
 _GIT_CONFIG = (
@@ -83,22 +79,21 @@ GitMode = WorkingTree | Staged | Commit | Range
 _DEFAULT_MODE = WorkingTree()
 
 
-def read_diff(source: str, mode: GitMode = _DEFAULT_MODE, stdin: BinaryIO | None = None) -> str:
-    """Return the diff text from `source`: `-` (stdin), a directory (git repository) or a file.
+def read_diff(source: str, mode: GitMode = _DEFAULT_MODE) -> str:
+    """Return the diff text from `source`: a directory (git repository) or a file.
 
     Git modes other than `WorkingTree` need a directory source. Invalid UTF-8 is replaced.
     Raises `InputError` for unreadable sources and git failures, `ConfigurationError`
     when `git` is needed but not on `PATH`.
     """
     path = Path(source)
-    if source != STDIN_SOURCE and path.is_dir():
+    if path.is_dir():
         return _read_git(path, mode)
     if not isinstance(mode, WorkingTree):
         raise InputError(
             "--staged, --commit e --range só valem quando SOURCE é um repositório git."
         )
-    data = _read_stdin(stdin) if source == STDIN_SOURCE else _read_file(path)
-    return data.decode("utf-8", errors="replace")
+    return _read_file(path).decode("utf-8", errors="replace")
 
 
 def _check_ref(ref: str, flag: str) -> None:
@@ -113,19 +108,6 @@ def _read_file(path: Path) -> bytes:
         raise InputError(f"Arquivo não encontrado: {path}") from None
     except OSError as exc:
         raise InputError(f"Não foi possível ler o arquivo {path} ({exc.strerror}).") from None
-
-
-def _read_stdin(stdin: BinaryIO | None) -> bytes:
-    closed = InputError("O stdin está fechado; envie o diff por um pipe ou passe um arquivo.")
-    # sys.stdin is None when file descriptor 0 is closed.
-    if stdin is None and sys.stdin is None:
-        raise closed
-    try:
-        return (stdin or sys.stdin.buffer).read()
-    except ValueError:
-        raise closed from None
-    except OSError as exc:
-        raise InputError(f"Não foi possível ler o stdin ({exc.strerror}).") from None
 
 
 def _git_args(mode: GitMode) -> list[str]:
@@ -147,7 +129,7 @@ def _read_git(repo: Path, mode: GitMode) -> str:
     if git is None:
         raise ConfigurationError(
             "O git não foi encontrado no PATH. Instale o git para analisar um repositório, "
-            "ou passe um arquivo .diff ou '-' (stdin)."
+            "ou passe um arquivo .diff."
         )
     result = _run_git(git, repo, _git_args(mode))
     if result.returncode == 0:
