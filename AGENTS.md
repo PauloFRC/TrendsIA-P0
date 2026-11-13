@@ -16,7 +16,7 @@
 
 ## Validation
 
-`scripts/validate.sh` must pass before every commit: lockfile check, ruff lint and format, strict mypy, pytest with coverage over 90%, gitleaks. It does not pass yet: the setup smoke tests that make it pass still need to be added.
+`scripts/validate.sh` must pass before every commit: lockfile check, ruff lint and format, strict mypy, pytest with coverage over 90%, gitleaks.
 
 ## Tests
 
