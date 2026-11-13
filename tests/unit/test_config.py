@@ -1,5 +1,6 @@
 """Tests for loading settings from `.env` with code defaults."""
 
+import os
 import traceback
 from pathlib import Path
 
@@ -210,3 +211,28 @@ def test_api_key_is_kept_and_masked() -> None:
     assert SENTINEL not in repr(settings)
     assert SENTINEL not in str(settings)
     assert settings.api_key.get_secret_value() == SENTINEL
+
+
+def test_env_file_not_in_utf8_is_rejected_without_its_content() -> None:
+    Path(".env").write_bytes(
+        f"LLM_MODEL=modelo:teste\nLLM_API_KEY={SENTINEL}\xe9\n".encode("latin-1")
+    )
+
+    with pytest.raises(ConfigurationError) as excinfo:
+        load_settings()
+
+    assert "UTF-8" in str(excinfo.value)
+    shown = "".join(traceback.format_exception(excinfo.value))
+    assert SENTINEL not in shown
+    assert "0xe9" not in shown
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads files without read permission")
+def test_unreadable_env_file_is_rejected() -> None:
+    write_env("LLM_MODEL=modelo:teste\n")
+    Path(".env").chmod(0)
+
+    with pytest.raises(ConfigurationError) as excinfo:
+        load_settings()
+
+    assert ".env" in str(excinfo.value)

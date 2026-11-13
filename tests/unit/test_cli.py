@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import httpx2
+import openai
 import pytest
 
 from diff_analyzer.cli import main
@@ -17,12 +19,13 @@ from diff_analyzer.errors import (
     LLMResponseError,
     LLMUnreachableError,
 )
-from diff_analyzer.llm_client import LLMResponse
+from diff_analyzer.llm_client import LLMResponse, OpenAIClient
 from diff_analyzer.prompt import DefaultPrompt, resolve_prompt
 from fakes import FakeLLMClient
 
 GIT = shutil.which("git") or "git"
 FILE_DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
 
 
 @pytest.fixture(autouse=True)
@@ -273,3 +276,54 @@ def test_invalid_env_exits_4_before_the_diff_is_read(
     assert out == ""
     assert err.startswith("Erro: Configuração inválida no .env")
     assert built == []
+
+
+def env_from_example(*, auth: str) -> None:
+    text = ENV_EXAMPLE.read_text(encoding="utf-8")
+    text = text.replace("LLM_MODEL=\n", "LLM_MODEL=modelo:teste\n")
+    text = text.replace("LLM_AUTH=required\n", f"LLM_AUTH={auth}\n")
+    Path(".env").write_text(text, encoding="utf-8")
+
+
+def run_with_real_client(argv: list[str]) -> tuple[int, list[httpx2.Request]]:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        message = {"role": "assistant", "content": "Ok."}
+        return httpx2.Response(
+            200, json={"choices": [{"index": 0, "message": message, "finish_reason": "stop"}]}
+        )
+
+    def factory(settings: Settings) -> OpenAIClient:
+        transport = httpx2.MockTransport(handler)
+        return OpenAIClient(settings, http_client=openai.DefaultHttpxClient(transport=transport))
+
+    return main(argv, client_factory=factory), requests
+
+
+def test_env_example_without_a_key_exits_4_before_any_request(
+    diff_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_from_example(auth="required")
+
+    code, requests = run_with_real_client([str(diff_file)])
+
+    out, err = capsys.readouterr()
+    assert code == ConfigurationError.exit_code
+    assert out == ""
+    assert err.startswith("Erro: ")
+    assert "LLM_API_KEY" in err
+    assert requests == []
+
+
+def test_env_example_with_auth_none_runs_without_a_key(
+    diff_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_from_example(auth="none")
+
+    code, requests = run_with_real_client([str(diff_file)])
+
+    assert code == 0
+    assert capsys.readouterr() == ("Ok.\n", "")
+    assert len(requests) == 1

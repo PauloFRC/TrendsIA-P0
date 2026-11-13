@@ -12,6 +12,7 @@ from pydantic import SecretStr
 
 from diff_analyzer.config import Settings
 from diff_analyzer.errors import (
+    ConfigurationError,
     DiffAnalyzerError,
     LLMAuthenticationError,
     LLMResponseError,
@@ -149,6 +150,28 @@ def test_request_uses_only_env_file_settings_whatever_the_shell_sets_for_the_sdk
     assert request.headers["Authorization"] == f"Bearer {bearer}"
     assert dict(request.headers) == dict(clean.headers)
     assert request.url == clean.url
+
+
+@pytest.mark.parametrize("api_key", ["", "   "], ids=["empty", "blank"])
+def test_required_auth_without_a_key_is_a_configuration_error_before_any_request(
+    monkeypatch: pytest.MonkeyPatch, api_key: str
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-shell")
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return completion()
+
+    settings = Settings.model_validate(
+        {"model": "modelo:3b", "auth": "required", "api_key": api_key}
+    )
+    with pytest.raises(ConfigurationError) as excinfo:
+        client_for(settings, handler).complete(MESSAGES)
+
+    assert "LLM_API_KEY" in str(excinfo.value)
+    assert ".env" in str(excinfo.value)
+    assert requests == []
 
 
 def test_connection_failure_is_an_unreachable_error(monkeypatch: pytest.MonkeyPatch) -> None:

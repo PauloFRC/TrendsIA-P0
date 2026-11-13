@@ -11,7 +11,12 @@ import openai
 from openai.types.chat import ChatCompletionMessageParam
 
 from diff_analyzer.config import Settings
-from diff_analyzer.errors import LLMAuthenticationError, LLMResponseError, LLMUnreachableError
+from diff_analyzer.errors import (
+    ConfigurationError,
+    LLMAuthenticationError,
+    LLMResponseError,
+    LLMUnreachableError,
+)
 
 # The SDK needs a key even when the endpoint has no auth.
 _NO_AUTH_KEY = "unused"
@@ -48,6 +53,11 @@ class OpenAIClient:
     def __init__(self, settings: Settings, http_client: httpx2.Client | None = None) -> None:
         if settings.auth == "required":
             api_key = settings.api_key.get_secret_value()
+            if not api_key.strip():
+                raise ConfigurationError(
+                    "Credencial ausente: LLM_AUTH=required exige LLM_API_KEY preenchida no .env. "
+                    "Se o endpoint não usa credencial, defina LLM_AUTH=none."
+                )
         else:
             api_key = _NO_AUTH_KEY
         self._settings = settings

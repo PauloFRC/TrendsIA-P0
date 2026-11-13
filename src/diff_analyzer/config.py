@@ -45,7 +45,16 @@ class _LiteralDotEnvSource(DotEnvSettingsSource):
         known = {(self.env_prefix + name).upper() for name in self.settings_cls.model_fields}
         file_vars: dict[str, str | None] = {}
         problems: dict[str, str] = {}
-        text = file_path.read_text(encoding=self.env_file_encoding)
+        try:
+            text = file_path.read_text(encoding=self.env_file_encoding)
+        except UnicodeDecodeError:
+            raise ConfigurationError(
+                "O arquivo .env não está em UTF-8."
+            ) from None
+        except OSError:
+            raise ConfigurationError(
+                "Não foi possível ler o arquivo .env."
+            ) from None
         for binding in parse_stream(io.StringIO(text)):
             if binding.error:
                 problems[f"linha {_statement_line(binding)}"] = "sintaxe inválida"
