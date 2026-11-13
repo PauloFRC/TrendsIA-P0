@@ -104,24 +104,51 @@ def test_null_content_is_returned_as_empty_text() -> None:
     assert client.complete(MESSAGES) == LLMResponse("", "stop")
 
 
+SHELL_SDK_SETTINGS = {
+    "OPENAI_API_KEY": "sk-from-shell",
+    "OPENAI_ADMIN_KEY": "sk-admin-from-shell",
+    "OPENAI_BASE_URL": "http://other.test/v1",
+    "OPENAI_ORG_ID": "org-from-shell",
+    "OPENAI_PROJECT_ID": "proj-from-shell",
+    "OPENAI_CUSTOM_HEADERS": (
+        "Authorization: Bearer sk-from-shell\napi-key: sk-from-shell\nX-From-Shell: 1"
+    ),
+}
+
+
+def sent_request(settings: Settings) -> httpx2.Request:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return completion()
+
+    client_for(settings, handler).complete(MESSAGES)
+    [request] = requests
+    return request
+
+
 @pytest.mark.parametrize(
     ("auth", "bearer"),
     [("required", SENTINEL), ("none", "unused")],
 )
-def test_api_key_comes_from_settings_in_required_mode_and_is_a_placeholder_in_none_mode(
+def test_request_uses_only_env_file_settings_whatever_the_shell_sets_for_the_sdk(
     monkeypatch: pytest.MonkeyPatch, auth: str, bearer: str
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-environment")
-    headers: list[str | None] = []
+    for name in SHELL_SDK_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings.model_validate(
+        {"base_url": "http://llm.test/v1", "model": "modelo:3b", "auth": auth, "api_key": SENTINEL}
+    )
+    clean = sent_request(settings)
+    for name, value in SHELL_SDK_SETTINGS.items():
+        monkeypatch.setenv(name, value)
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        headers.append(request.headers.get("Authorization"))
-        return completion()
+    request = sent_request(settings)
 
-    settings = Settings.model_validate({"model": "modelo:3b", "auth": auth, "api_key": SENTINEL})
-    client_for(settings, handler).complete(MESSAGES)
-
-    assert headers == [f"Bearer {bearer}"]
+    assert request.headers["Authorization"] == f"Bearer {bearer}"
+    assert dict(request.headers) == dict(clean.headers)
+    assert request.url == clean.url
 
 
 def test_connection_failure_is_an_unreachable_error(monkeypatch: pytest.MonkeyPatch) -> None:

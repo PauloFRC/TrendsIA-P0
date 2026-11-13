@@ -54,6 +54,10 @@ class OpenAIClient:
         self._sdk = openai.OpenAI(
             base_url=settings.base_url, api_key=api_key, http_client=http_client
         )
+        # Drop SDK settings read from the shell to ensure only `.env` is used.
+        self._sdk.organization = None
+        self._sdk.project = None
+        self._sdk._custom_headers = {}
 
     def complete(self, messages: Sequence[ChatCompletionMessageParam]) -> LLMResponse:
         """Send `messages` with the model and sampling settings; return the first choice."""
