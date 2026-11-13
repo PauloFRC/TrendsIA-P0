@@ -80,16 +80,13 @@ _DEFAULT_MODE = WorkingTree()
 
 
 def read_diff(source: str, mode: GitMode = _DEFAULT_MODE) -> str:
-    """Return the diff text from `source`: a directory (git repository) or a file.
-
-    Git modes other than `WorkingTree` need a directory source. Invalid UTF-8 is replaced.
-    Raises `InputError` for unreadable sources and git failures, `ConfigurationError`
-    when `git` is needed but not on `PATH`.
-    """
+    """Return the diff text from `source`: a directory (git repository) or a file."""
     path = Path(source)
     if path.is_dir():
         return _read_git(path, mode)
     if not isinstance(mode, WorkingTree):
+        if not path.exists():
+            raise InputError(f"Repositório não encontrado: {path}")
         raise InputError(
             "--staged, --commit e --range só valem quando SOURCE é um repositório git."
         )

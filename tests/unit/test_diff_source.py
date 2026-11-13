@@ -104,6 +104,12 @@ def test_git_mode_without_repository_is_an_input_error(tmp_path: Path, mode: Git
         read_diff(str(diff_file), mode)
 
 
+@pytest.mark.parametrize("mode", [Staged(), Commit("HEAD"), Range("a..b")])
+def test_git_mode_with_missing_source_reports_not_found(tmp_path: Path, mode: GitMode) -> None:
+    with pytest.raises(InputError, match=r"não encontrado: .*missing"):
+        read_diff(str(tmp_path / "missing"), mode)
+
+
 def test_working_tree_diffs_staged_and_unstaged_against_head(repo: Path) -> None:
     write(repo / "a.txt", "staged\n")
     git(repo, "add", "a.txt")
