@@ -167,9 +167,14 @@ def test_http_error_is_a_response_error_naming_model_and_status() -> None:
     assert excinfo.value.__suppress_context__
 
 
-def bad_request(code: str) -> Handler:
+def bad_request(code: str, param: object = None) -> Handler:
     def handler(request: httpx2.Request) -> httpx2.Response:
-        error = {"message": f"too long {SENTINEL}", "type": "invalid_request_error", "code": code}
+        error = {
+            "message": f"too long {SENTINEL}",
+            "type": "invalid_request_error",
+            "param": param,
+            "code": code,
+        }
         return httpx2.Response(400, json={"error": error})
 
     return handler
@@ -200,6 +205,48 @@ def test_other_bad_request_keeps_the_generic_response_error() -> None:
     message = str(excinfo.value)
     assert "BadRequestError" in message
     assert "contexto" not in message
+
+
+@pytest.mark.parametrize(
+    ("code", "param", "fix"),
+    [
+        ("unsupported_parameter", "max_tokens", "LLM_MODEL"),
+        ("unsupported_value", "temperature", "LLM_TEMPERATURE"),
+        ("unsupported_value", "max_tokens", "LLM_MAX_OUTPUT_TOKENS"),
+    ],
+)
+def test_rejected_request_parameter_is_named_with_the_setting_to_change(
+    code: str, param: str, fix: str
+) -> None:
+    settings = Settings(model="modelo:3b", auth="none")
+    client = client_for(settings, bad_request(code, param))
+
+    with pytest.raises(LLMResponseError) as excinfo:
+        client.complete(MESSAGES)
+
+    message = str(excinfo.value)
+    assert param in message
+    assert fix in message
+    assert "modelo:3b" in message
+    assert "400" in message
+    assert SENTINEL not in message
+
+
+@pytest.mark.parametrize(
+    "param", [SENTINEL, [], {"name": "max_tokens"}], ids=["unknown-name", "list", "dict"]
+)
+def test_rejected_parameter_outside_the_sent_names_keeps_the_generic_error(
+    param: object,
+) -> None:
+    settings = Settings(model="modelo:3b", auth="none")
+    client = client_for(settings, bad_request("unsupported_parameter", param))
+
+    with pytest.raises(LLMResponseError) as excinfo:
+        client.complete(MESSAGES)
+
+    message = str(excinfo.value)
+    assert "BadRequestError" in message
+    assert SENTINEL not in message
 
 
 @pytest.mark.parametrize(

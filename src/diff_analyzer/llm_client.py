@@ -16,6 +16,12 @@ from diff_analyzer.errors import LLMAuthenticationError, LLMResponseError, LLMUn
 # The SDK needs a key even when the endpoint has no auth.
 _NO_AUTH_KEY = "unused"
 
+_PARAM_SETTINGS = {
+    "temperature": "LLM_TEMPERATURE",
+    "seed": "LLM_SEED",
+    "max_tokens": "LLM_MAX_OUTPUT_TOKENS",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class LLMResponse:
@@ -71,15 +77,8 @@ class OpenAIClient:
                 f"O LLM em {_safe_url(settings.base_url)} recusou a credencial "
                 f"(HTTP {exc.status_code}, {type(exc).__name__})."
             ) from None
-        # Input larger than the model context.
         except openai.BadRequestError as exc:
-            if exc.code != "context_length_exceeded":
-                raise _status_error(settings.model, exc) from None
-            raise LLMResponseError(
-                f"O servidor não oferece contexto suficiente para este diff com o modelo "
-                f"{settings.model} (HTTP {exc.status_code}). Use um diff menor ou um "
-                "modelo com mais contexto."
-            ) from None
+            raise _bad_request_error(settings.model, exc) from None
         except openai.OpenAIError as exc:
             raise _status_error(settings.model, exc) from None
         # The SDK parses a JSON body without catching decode errors.
@@ -95,6 +94,27 @@ class OpenAIClient:
         if not isinstance(content, str):
             raise _unusable_response(settings.model) from None
         return LLMResponse(content, finish_reason)
+
+
+def _bad_request_error(model: str, exc: openai.BadRequestError) -> LLMResponseError:
+    # Input larger than the model context.
+    if exc.code == "context_length_exceeded":
+        return LLMResponseError(
+            f"O servidor não oferece contexto suficiente para este diff com o modelo "
+            f"{model} (HTTP {exc.status_code}). Use um diff menor ou um modelo com mais contexto."
+        )
+    param = exc.param if isinstance(exc.param, str) and exc.param in _PARAM_SETTINGS else None
+    if param is not None and exc.code == "unsupported_value":
+        return LLMResponseError(
+            f"O modelo {model} recusou o valor de {param} (HTTP {exc.status_code}). "
+            f"Ajuste {_PARAM_SETTINGS[param]} no .env."
+        )
+    if param is not None and exc.code == "unsupported_parameter":
+        return LLMResponseError(
+            f"O modelo {model} não aceita o parâmetro {param}, que o diff-analyzer sempre "
+            f"envia (HTTP {exc.status_code}). Escolha outro modelo em LLM_MODEL."
+        )
+    return _status_error(model, exc)
 
 
 def _status_error(model: str, exc: openai.OpenAIError) -> LLMResponseError:
