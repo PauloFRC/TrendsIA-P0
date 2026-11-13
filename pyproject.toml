@@ -5,7 +5,9 @@ description = "CLI que envia um diff (arquivo ou repositório git) para um LLM e
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "httpx2==2.16.0",
     "openai==3.46.0",
+    "pydantic==2.14.3",
     "pydantic-settings==2.16.2",
     "python-dotenv==1.2.4",
     "unidiff==1.0.1",
@@ -15,7 +17,7 @@ dependencies = [
 diff-analyzer = "diff_analyzer.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.17,<0.12"]
+requires = ["uv_build==0.11.17"]
 build-backend = "uv_build"
 
 [tool.ruff]
@@ -52,7 +54,6 @@ show_missing = true
 
 [dependency-groups]
 dev = [
-    "httpx2==2.16.0",
     "mypy==2.4.1",
     "pytest==9.2.0",
     "pytest-cov==7.1.0",
