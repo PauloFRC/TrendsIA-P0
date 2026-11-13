@@ -1,8 +1,9 @@
 """Command-line entry point: parses arguments, prints the result, maps errors to exit codes."""
 
 import argparse
+import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import NoReturn
 
@@ -15,9 +16,37 @@ from diff_analyzer.service import AnalysisRequest, analyze
 
 ClientFactory = Callable[[Settings], LLMClient]
 
+# Replacements for the argparse messages.
+_ARGPARSE_MESSAGES = [
+    (re.compile(pattern, re.DOTALL), template)
+    for pattern, template in [
+        (r"the following arguments are required: (.+)", "faltam argumentos obrigatórios: {}"),
+        (r"unrecognized arguments: (.+)", "argumentos não reconhecidos: {}"),
+        (r"argument (.+?): not allowed with argument (.+)", "{} não pode ser usado com {}"),
+        (r"argument (.+?): expected one argument", "{} espera um valor"),
+        (r"argument (.+?): ignored explicit argument (.+)", "{} não aceita valor, recebido: {}"),
+        (r"ambiguous option: (.+?) could match (.+)", "opção ambígua: {} pode ser {}"),
+    ]
+]
+
+
+class _HelpFormatter(argparse.HelpFormatter):
+    def add_usage(
+        self,
+        usage: str | None,
+        actions: Iterable[argparse.Action],
+        groups: Iterable[argparse._MutuallyExclusiveGroup],
+        prefix: str | None = None,
+    ) -> None:
+        super().add_usage(usage, actions, groups, "uso: " if prefix is None else prefix)
+
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
+        for pattern, template in _ARGPARSE_MESSAGES:
+            if match := pattern.fullmatch(message):
+                message = template.format(*match.groups())
+                break
         self.exit(2, f"Erro: {message}\n")
 
 
@@ -44,6 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="diff-analyzer",
         description="Envia um diff para um LLM e imprime a análise.",
         epilog="Configuração do LLM vem do arquivo .env.",
+        formatter_class=_HelpFormatter,
         add_help=False,
     )
     source = parser.add_argument_group("origem do diff")

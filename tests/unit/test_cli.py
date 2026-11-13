@@ -60,6 +60,7 @@ def test_help_documents_every_argument(capsys: pytest.CaptureFixture[str]) -> No
     out, err = capsys.readouterr()
     assert code == 0
     assert err == ""
+    assert out.startswith("uso: diff-analyzer ")
     for argument in [
         "SOURCE",
         "--staged",
@@ -173,28 +174,40 @@ def test_git_flags_select_the_diff_of_the_repository(
 
 
 @pytest.mark.parametrize(
-    "argv",
+    ("argv", "error"),
     [
-        [],
-        ["--staged", "--commit", "HEAD", "."],
-        ["--commit", "HEAD", "--range", "a..b", "."],
-        ["-p", "Resuma.", "--prompt-file", "prompt.md", "."],
-        ["--unknown", "."],
+        ([], "faltam argumentos obrigatórios: SOURCE"),
+        (["--staged", "--commit", "HEAD", "."], "--commit não pode ser usado com --staged"),
+        (["--commit", "HEAD", "--range", "a..b", "."], "--range não pode ser usado com --commit"),
+        (
+            ["-p", "Resuma.", "--prompt-file", "prompt.md", "."],
+            "--prompt-file não pode ser usado com -p/--prompt",
+        ),
+        (["--unknown", "."], "argumentos não reconhecidos: --unknown"),
+        ([".", "-p"], "-p/--prompt espera um valor"),
+        (["--staged=sim", "."], "--staged não aceita valor, recebido: 'sim'"),
+        (["--pr", "x", "."], "opção ambígua: --pr pode ser --prompt, --prompt-file"),
     ],
-    ids=["no-source", "staged-and-commit", "commit-and-range", "both-prompts", "unknown-flag"],
+    ids=[
+        "no-source",
+        "staged-and-commit",
+        "commit-and-range",
+        "both-prompts",
+        "unknown-flag",
+        "missing-value",
+        "value-for-a-switch",
+        "ambiguous-prefix",
+    ],
 )
-def test_usage_error_exits_2_with_only_an_error_line_on_stderr(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
+def test_usage_error_exits_2_with_one_error_line(
+    argv: list[str], error: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     client = FakeLLMClient()
 
     code = run(argv, client)
 
-    out, err = capsys.readouterr()
     assert code == 2
-    assert out == ""
-    assert err.startswith("Erro: ")
-    assert len(err.splitlines()) == 1
+    assert capsys.readouterr() == ("", f"Erro: {error}\n")
     assert client.calls == []
 
 
