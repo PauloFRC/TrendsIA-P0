@@ -51,7 +51,7 @@ class _LiteralDotEnvSource(DotEnvSettingsSource):
                 problems[f"linha {_statement_line(binding)}"] = "sintaxe inválida"
             elif binding.key is not None:
                 if binding.key.upper() not in known:
-                    problems[binding.key.upper()] = "chave desconhecida"
+                    problems[f"linha {_statement_line(binding)}"] = "chave desconhecida"
                 file_vars[binding.key] = binding.value
         if problems:
             raise _config_error(problems)
@@ -135,6 +135,5 @@ def _config_error(problems: dict[str, str]) -> ConfigurationError:
 
 
 def _statement_line(binding: Binding) -> int:
-    # The parser counts from the blank lines before a statement, not the statement.
     text = binding.original.string
     return binding.original.line + text[: len(text) - len(text.lstrip())].count("\n")

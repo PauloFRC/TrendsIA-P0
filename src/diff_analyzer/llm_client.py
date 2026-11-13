@@ -133,4 +133,4 @@ def _unusable_response(model: str) -> LLMResponseError:
 def _safe_url(url: str) -> str:
     parts = urlsplit(url)
     host = parts.netloc.rpartition("@")[2]
-    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+    return urlunsplit((parts.scheme, host, "", "", ""))

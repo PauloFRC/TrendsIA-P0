@@ -131,12 +131,11 @@ def test_connection_failure_is_an_unreachable_error(monkeypatch: pytest.MonkeyPa
     def handler(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("connection refused", request=request)
 
-    settings = Settings(base_url="http://llm.test:8080/v1", model="modelo:3b", auth="none")
+    settings = Settings(model="modelo:3b", auth="none")
     with pytest.raises(LLMUnreachableError) as excinfo:
         client_for(settings, handler).complete(MESSAGES)
 
     message = str(excinfo.value)
-    assert "http://llm.test:8080/v1" in message
     assert "APIConnectionError" in message
     assert excinfo.value.__cause__ is None
     assert excinfo.value.__suppress_context__
@@ -340,3 +339,27 @@ def test_error_messages_never_carry_secrets_bodies_headers_or_url_credentials(
         client_for(settings, handler).complete(MESSAGES)
 
     assert SENTINEL not in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [leaky_status(401), leaky_status(403), leaky_connection_error],
+    ids=["auth-error", "permission-error", "connection-error"],
+)
+def test_endpoint_is_shown_by_scheme_host_and_port_only(
+    monkeypatch: pytest.MonkeyPatch, handler: Handler
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    settings = Settings(
+        base_url=f"https://user:{SENTINEL}@llm.test:8443/{SENTINEL}/v1?token={SENTINEL}#{SENTINEL}",
+        model="modelo:3b",
+        auth="none",
+    )
+
+    with pytest.raises(DiffAnalyzerError) as excinfo:
+        client_for(settings, handler).complete(MESSAGES)
+
+    message = str(excinfo.value)
+    assert "em https://llm.test:8443 " in message
+    assert SENTINEL not in message
+    assert "/v1" not in message

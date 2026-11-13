@@ -160,13 +160,21 @@ def test_out_of_range_value_is_rejected_naming_key(line: str) -> None:
     assert key in str(load_error(line + "\n"))
 
 
-@pytest.mark.parametrize("value", [SENTINEL, ""])
-def test_unknown_key_is_rejected_naming_key(value: str) -> None:
-    err = load_error(f"LLM_TIMEOUT_REED={value}\nOTHER_TOOL_TOKEN={value}\n")
+@pytest.mark.parametrize(
+    "line",
+    [f"LLM_TIMEOUT_REED={SENTINEL}", "LLM_TIMEOUT_REED=", SENTINEL],
+    ids=["unknown-key", "unknown-key-empty-value", "bare-token"],
+)
+def test_unknown_key_is_rejected_naming_line_not_content(line: str) -> None:
+    err = load_error(f"LLM_AUTH=none\n\n{line}\nLLM_SEED=7\nOTHER_TOOL_TOKEN=1\n")
 
-    assert "LLM_TIMEOUT_REED" in str(err)
-    assert "OTHER_TOOL_TOKEN" in str(err)
-    assert SENTINEL not in str(err)
+    assert "linha 3 (chave desconhecida)" in str(err)
+    assert "linha 5 (chave desconhecida)" in str(err)
+
+    shown = str(err).upper()
+    assert "LLM_TIMEOUT_REED" not in shown
+    assert "OTHER_TOOL_TOKEN" not in shown
+    assert SENTINEL.upper() not in shown
 
 
 @pytest.mark.parametrize("bad_line", [f'LLM_MODEL="{SENTINEL}', f"{SENTINEL} is not a setting"])
