@@ -12,6 +12,9 @@ import pytest
 
 from diff_analyzer.diff_source import Commit, GitMode, Range, Staged, WorkingTree, read_diff
 from diff_analyzer.errors import ConfigurationError, InputError
+from diff_analyzer.llm_client import LLMResponse
+from diff_analyzer.service import AnalysisRequest, analyze
+from fakes import FakeLLMClient
 
 GIT = shutil.which("git") or "git"
 FILE_DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
@@ -250,6 +253,28 @@ def test_nested_source_gives_whole_repository_diff_despite_diff_relative(
 
     assert "+++ b/a.txt" in diff
     assert "+++ b/sub/inner.txt" in diff
+
+
+def test_checkout_mismatch_is_rejected_before_sending_diff(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write(repo / "a.txt", "ordinary edit\n")
+    run = subprocess.run
+
+    def git_with_unexpected_root(
+        args: list[str], *, capture_output: bool, check: bool, env: dict[str, str]
+    ) -> subprocess.CompletedProcess[bytes]:
+        if args[-2:] == ["rev-parse", "--show-toplevel"]:
+            return subprocess.CompletedProcess(args, 0, os.fsencode(repo.parent) + b"\n", b"")
+        return run(args, capture_output=capture_output, check=check, env=env)
+
+    monkeypatch.setattr(subprocess, "run", git_with_unexpected_root)
+    client = FakeLLMClient(LLMResponse("Resumo.", "stop"))
+
+    with pytest.raises(InputError, match="raiz da árvore de trabalho"):
+        analyze(AnalysisRequest(str(repo)), client)
+
+    assert client.calls == []
 
 
 @pytest.mark.parametrize(

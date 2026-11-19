@@ -154,3 +154,4 @@ Linters e checadores de tipo acham violações de regras fixas, mas nenhum expli
 - **Validações ausentes:** o conteúdo não é validado como diff; uma resposta cortada ou vazia não gera aviso.
 - **Injeção de prompt.** Texto dentro do diff ainda pode mudar a resposta do modelo.
 - **Repositório de outra pessoa.** Um repositório pode configurar comandos para o git executar. Ao gerar o diff, a CLI desativa os que o git conhece para isso: fsmonitor, hooks, filtros definidos no repositório, verificação de assinatura, download de objetos ausentes e diff externo em submódulos. Filtros de configuração global ou do sistema, como o do Git LFS, continuam valendo.
+- **Raiz da árvore de trabalho.** No modo padrão, o diff usa a raiz do checkout selecionado. Se o Git informar outra raiz, a CLI encerra com código 3 antes de enviar o diff ao LLM. Essa checagem não isola o Git de repositórios não confiáveis.

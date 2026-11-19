@@ -145,12 +145,35 @@ def _read_git(repo: Path, mode: GitMode) -> str:
             "O git não foi encontrado no PATH. Instale o git para analisar um repositório, "
             "ou passe um arquivo .diff."
         )
-    result = _run_git(git, repo, [*_filter_overrides(git, repo), *_git_args(mode)])
+    args = _git_args(mode)
+    if isinstance(mode, WorkingTree):
+        repo = _checkout_root(git, repo)
+        args.insert(0, f"--work-tree={repo}")
+    result = _run_git(git, repo, [*_filter_overrides(git, repo), *args])
     if result.returncode == 0:
         return result.stdout.decode("utf-8", errors="replace")
     if isinstance(mode, WorkingTree) and _has_no_commits(git, repo):
         raise InputError(f"O repositório {repo} ainda não tem commits; use --staged.")
     raise _git_failure(repo, result.stderr)
+
+
+def _checkout_root(git: str, source: Path) -> Path:
+    result = _run_git(git, source, ["rev-parse", "--show-toplevel"])
+    if result.returncode != 0:
+        raise _git_failure(source, result.stderr)
+
+    # The nearest .git entry marks the checkout; Git's reported root can come from config.
+    reported = Path(os.fsdecode(result.stdout.removesuffix(b"\n")))
+    selected = source.resolve()
+    for root in (selected, *selected.parents):
+        if (root / ".git").exists():
+            if root == reported:
+                return root
+            break
+    raise InputError(
+        f"Não foi possível confirmar a raiz da árvore de trabalho de {source}. "
+        "Passe um arquivo .diff gerado em um repositório de confiança."
+    )
 
 
 def _filter_overrides(git: str, repo: Path) -> list[str]:
