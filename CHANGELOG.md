@@ -12,6 +12,7 @@ Primeira versão (tag `p0-basico`): a CLI envia um diff a um LLM e imprime uma a
 - Configuração só pelo `.env`, com modelo em `.env.example`: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_AUTH`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `LLM_SEED` e `LLM_MAX_OUTPUT_TOKENS`.
 - Códigos de saída de 2 a 7, cada um com mensagem definida.
 - Ajuda e erros de argumentos em português.
+- O git não executa comandos configurados pelo repositório analisado: fsmonitor, hooks, filtros, verificação de assinatura, download de objetos ausentes e diff externo em submódulos.
 
 ### Limitações conhecidas
 
@@ -19,3 +20,4 @@ Primeira versão (tag `p0-basico`): a CLI envia um diff a um LLM e imprime uma a
 - Texto que não é um diff é enviado e analisado, com exit 0.
 - Alguns servidores cortam uma entrada maior que o contexto sem avisar e a ferramenta não detecta.
 - Possibilidade de injeção de prompt.
+- Filtros definidos só no repositório analisado não são aplicados, submódulos com mudanças locais não aparecem como `-dirty` e, num clone parcial, um objeto ausente gera erro em vez de ser baixado.

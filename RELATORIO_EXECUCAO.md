@@ -83,6 +83,12 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 - **Como foi tratado:** depois de criar o cliente do SDK, organização, projeto e cabeçalhos do shell são zerados. O teste define essas variáveis e compara a requisição inteira com a de um ambiente limpo, nos dois modos de autenticação.
 - **O que aprendi:** "configuração só pelo `.env`".
 
+### Comandos do Git definidos pelo repositório
+
+- **O que aconteceu:** ao gerar um diff de um repositório recebido como pasta, o Git podia executar comandos definidos pelo próprio repositório.
+- **Como foi tratado:** a CLI desativa o monitor de arquivos, os hooks e a verificação de assinaturas durante a geração do diff. Também neutraliza filtros definidos pelo repositório, impede a busca de objetos ausentes e mostra apenas as mudanças de referência dos submódulos.
+- **Limites:** não é um isolamento completo do Git. Filtros da configuração do usuário ou do sistema ainda podem ser usados.
+
 ## Uso de IA no desenvolvimento
 
 As Harness Oh-My-Pi (OMP) foi a principal utilizada. Claude Opus 5.5 foi o agente principal. O GPT 6.1 Sol ajudou com revisão das entregas durante as sessões, como advisor do OMP, e também em sessões separadas, como revisor independente.

@@ -14,7 +14,7 @@ uv run --frozen diff-analyzer examples/exemplo.diff
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.11.17 ou superior (< 0.12).
 - Um endpoint de LLM compatível com a API de Chat Completions da OpenAI.
-- git, para analisar um repositório.
+- git 2.26 ou superior, para analisar um repositório.
 - [gitleaks](https://github.com/gitleaks/gitleaks#installing) 8.19 ou superior, para `scripts/validate.sh`.
 
 ## Acesso ao LLM
@@ -153,3 +153,4 @@ Linters e checadores de tipo acham violações de regras fixas, mas nenhum expli
 - **Corte silencioso.** Alguns servidores cortam uma entrada maior que o contexto sem avisar. O sistema não detecta isso e a resposta pode ignorar parte do diff ou o prompt.
 - **Validações ausentes:** o conteúdo não é validado como diff; uma resposta cortada ou vazia não gera aviso.
 - **Injeção de prompt.** Texto dentro do diff ainda pode mudar a resposta do modelo.
+- **Repositório de outra pessoa.** Um repositório pode configurar comandos para o git executar. Ao gerar o diff, a CLI desativa os que o git conhece para isso: fsmonitor, hooks, filtros definidos no repositório, verificação de assinatura, download de objetos ausentes e diff externo em submódulos. Filtros de configuração global ou do sistema, como o do Git LFS, continuam valendo.

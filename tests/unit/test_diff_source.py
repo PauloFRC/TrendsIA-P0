@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -52,6 +53,18 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def marker_program(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    """Executable that creates the returned marker file when anything runs it."""
+    marker = tmp_path / f"{name}.ran"
+    program = tmp_path / f"{name}.py"
+    program.write_text(
+        f"#!{sys.executable}\nimport pathlib\npathlib.Path({str(marker)!r}).touch()\n",
+        encoding="utf-8",
+    )
+    program.chmod(0o755)
+    return program, marker
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """Repository with commits c1 (a.txt=1) and c2 (a.txt=2, b.txt=1)."""
@@ -64,6 +77,19 @@ def repo(tmp_path: Path) -> Path:
     write(root / "b.txt", "1\n")
     commit_all(root, "c2")
     return root
+
+
+@pytest.fixture
+def superproject(tmp_path: Path, repo: Path) -> Path:
+    """`repo` with a committed submodule `sub` (s.txt=a)."""
+    origin = tmp_path / "sub-origin"
+    origin.mkdir()
+    git(origin, "init", "-q")
+    write(origin / "s.txt", "a\n")
+    commit_all(origin, "s1")
+    git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(origin), "sub")
+    commit_all(repo, "add sub")
+    return repo
 
 
 def test_file_source_returns_its_content(tmp_path: Path) -> None:
@@ -251,6 +277,179 @@ def test_textconv_is_not_applied(repo: Path) -> None:
     write(repo / "a.txt", "lower\n")
 
     assert "+lower" in read_diff(str(repo))
+
+
+@pytest.mark.parametrize("mode", [WorkingTree(), Staged()])
+def test_repository_fsmonitor_never_runs(tmp_path: Path, repo: Path, mode: GitMode) -> None:
+    write(repo / "a.txt", "changed\n")
+    git(repo, "add", "a.txt")
+    program, marker = marker_program(tmp_path, "fsmonitor")
+    git(repo, "config", "core.fsmonitor", str(program))
+
+    read_diff(str(repo), mode)
+
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("variable", ["clean", "process"])
+@pytest.mark.parametrize("defined_in", ["repository config", "included file"])
+def test_repository_filter_never_runs(
+    tmp_path: Path, repo: Path, variable: str, defined_in: str
+) -> None:
+    write(repo / ".gitattributes", "*.txt filter=evil\n")
+    commit_all(repo, "attributes")
+    program, marker = marker_program(tmp_path, "filter")
+    if defined_in == "included file":
+        included = tmp_path / "included.gitconfig"
+        git(repo, "config", "--file", str(included), f"filter.evil.{variable}", str(program))
+        git(repo, "config", "include.path", str(included))
+    else:
+        git(repo, "config", f"filter.evil.{variable}", str(program))
+    git(repo, "config", "filter.evil.required", "true")
+    write(repo / "a.txt", "changed\n")
+
+    diff = read_diff(str(repo))
+
+    assert not marker.exists()
+    assert "+changed" in diff
+
+
+def test_user_filter_runs_instead_of_the_repository_one(tmp_path: Path, repo: Path) -> None:
+    write(repo / ".gitattributes", "*.txt filter=lfs\n")
+    commit_all(repo, "attributes")
+    user_program, user_marker = marker_program(tmp_path, "user-filter")
+    repo_program, repo_marker = marker_program(tmp_path, "repo-filter")
+    git(repo, "config", "--global", "filter.lfs.clean", str(user_program))
+    git(repo, "config", "filter.lfs.clean", str(repo_program))
+    write(repo / "a.txt", "changed\n")
+
+    read_diff(str(repo))
+
+    assert user_marker.exists()
+    assert not repo_marker.exists()
+
+
+def test_repository_filter_named_with_equals_is_refused(tmp_path: Path, repo: Path) -> None:
+    # An "=" in the driver name splits the -c key early.
+    write(repo / ".gitattributes", "*.txt filter=a=b\n")
+    commit_all(repo, "attributes")
+    program, marker = marker_program(tmp_path, "filter")
+    git(repo, "config", "filter.a=b.clean", str(program))
+    write(repo / "a.txt", "changed\n")
+
+    with pytest.raises(InputError, match="filtro"):
+        read_diff(str(repo))
+    assert not marker.exists()
+
+
+def test_repository_hook_never_runs(tmp_path: Path, repo: Path) -> None:
+    program, marker = marker_program(tmp_path, "hook")
+    shutil.copy(program, repo / ".git" / "hooks" / "post-index-change")
+    # A newer mtime with unchanged content makes Git rewrite the index.
+    stat = (repo / "a.txt").stat()
+    os.utime(repo / "a.txt", (stat.st_atime + 10, stat.st_mtime + 10))
+
+    read_diff(str(repo))
+
+    assert not marker.exists()
+
+
+def test_signature_check_program_never_runs(tmp_path: Path, repo: Path) -> None:
+    header, _, message = git(repo, "cat-file", "commit", "HEAD").partition("\n\n")
+    signature = " -----BEGIN PGP SIGNATURE-----\n \n x\n -----END PGP SIGNATURE-----"
+    signed = subprocess.run(  # noqa: S603
+        [GIT, "-C", str(repo), "hash-object", "-t", "commit", "-w", "--stdin"],
+        input=f"{header}\ngpgsig{signature}\n\n{message}",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    program, marker = marker_program(tmp_path, "gpg")
+    git(repo, "config", "log.showSignature", "true")
+    git(repo, "config", "gpg.program", str(program))
+
+    read_diff(str(repo), Commit(signed))
+
+    assert not marker.exists()
+
+
+def test_partial_clone_never_fetches_missing_objects(tmp_path: Path, repo: Path) -> None:
+    git(repo, "config", "uploadpack.allowFilter", "true")
+    clone = tmp_path / "clone"
+    git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--no-local",
+        "--filter=blob:none",
+        "--no-checkout",
+        repo.as_uri(),
+        str(clone),
+    )
+    program, marker = marker_program(tmp_path, "upload-pack")
+    git(clone, "config", "remote.origin.uploadpack", str(program))
+    # A protocol-specific setting beats protocol.allow.
+    git(clone, "config", "protocol.file.allow", "always")
+
+    with pytest.raises(InputError):
+        read_diff(str(clone), Commit("HEAD"))
+    assert not marker.exists()
+
+
+def test_submodule_config_never_runs_for_the_working_tree(
+    tmp_path: Path, superproject: Path
+) -> None:
+    sub = superproject / "sub"
+    write(sub / ".gitattributes", "*.txt filter=evil\n")
+    commit_all(sub, "attributes")
+    program, marker = marker_program(tmp_path, "submodule-filter")
+    git(sub, "config", "filter.evil.clean", str(program))
+    # Per-submodule settings beat diff.ignoreSubmodules.
+    git(superproject, "config", "submodule.sub.ignore", "none")
+    # A same-size edit forces Git to read the file.
+    write(sub / "s.txt", "b\n")
+
+    read_diff(str(superproject))
+
+    assert not marker.exists()
+
+
+def test_submodule_config_never_runs_for_a_commit(tmp_path: Path, superproject: Path) -> None:
+    sub = superproject / "sub"
+    write(sub / "s.txt", "b\n")
+    commit_all(sub, "s2")
+    commit_all(superproject, "bump sub")
+    program, marker = marker_program(tmp_path, "submodule-external")
+    git(sub, "config", "diff.external", str(program))
+    git(superproject, "config", "diff.submodule", "diff")
+
+    diff = read_diff(str(superproject), Commit("HEAD"))
+
+    assert not marker.exists()
+    assert "+Subproject commit" in diff
+
+
+def test_git_without_config_scopes_is_refused(
+    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Git before 2.26 rejects --show-scope.
+    old_bin = tmp_path / "old-bin"
+    old_bin.mkdir()
+    old_git = old_bin / "git"
+    old_git.write_text(
+        f"#!{sys.executable}\nimport os, sys\n"
+        "if 'config' in sys.argv:\n"
+        "    sys.stderr.write('error: unknown option show-scope\\n')\n"
+        "    sys.exit(129)\n"
+        f"os.execv({GIT!r}, [{GIT!r}, *sys.argv[1:]])\n",
+        encoding="utf-8",
+    )
+    old_git.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{old_bin}{os.pathsep}{os.environ['PATH']}")
+    write(repo / "a.txt", "changed\n")
+
+    with pytest.raises(InputError, match="show-scope"):
+        read_diff(str(repo))
 
 
 def test_non_ascii_paths_are_not_quoted(repo: Path) -> None:

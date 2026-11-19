@@ -19,7 +19,24 @@ _GIT_CONFIG = (
     "-c",
     "diff.relative=false",
 )
-_DIFF_FLAGS = ("--no-color", "--no-ext-diff", "--no-textconv")
+_NO_REPO_COMMANDS = (
+    "-c",
+    # Older Git treats "false" as a hook path.
+    "core.fsmonitor=",
+    "-c",
+    f"core.hooksPath={os.devnull}",
+    "-c",
+    "log.showSignature=false",
+)
+# Keep Git out of submodule worktrees and configs.
+_DIFF_FLAGS = (
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=dirty",
+    "--submodule=short",
+)
+_USER_SCOPES = frozenset({"system", "global"})
 # Output of `git rev-parse --local-env-vars`: variables that bind git to one repository.
 # Inherited, they override SOURCE (GIT_DIR disables discovery from `-C`).
 _REPO_ENV_VARS = frozenset(
@@ -128,28 +145,67 @@ def _read_git(repo: Path, mode: GitMode) -> str:
             "O git não foi encontrado no PATH. Instale o git para analisar um repositório, "
             "ou passe um arquivo .diff."
         )
-    result = _run_git(git, repo, _git_args(mode))
+    result = _run_git(git, repo, [*_filter_overrides(git, repo), *_git_args(mode)])
     if result.returncode == 0:
         return result.stdout.decode("utf-8", errors="replace")
     if isinstance(mode, WorkingTree) and _has_no_commits(git, repo):
         raise InputError(f"O repositório {repo} ainda não tem commits; use --staged.")
-    detail = _first_line(result.stderr)
+    raise _git_failure(repo, result.stderr)
+
+
+def _filter_overrides(git: str, repo: Path) -> list[str]:
+    # Only override repo keys: even an empty `process` suppresses `clean`.
+    listing = _run_git(git, repo, ["config", "-z", "--show-scope", "--get-regexp", r"^filter\."])
+    # Exit 1 means no matches; older Git rejects --show-scope.
+    if listing.returncode not in (0, 1):
+        raise _git_failure(repo, listing.stderr)
+    fields = listing.stdout.decode("utf-8", errors="surrogateescape").split("\0")[:-1]
+    user_values: dict[str, str] = {}
+    repo_keys: set[str] = set()
+    for scope, entry in zip(fields[0::2], fields[1::2], strict=True):
+        key, _, value = entry.partition("\n")
+        if scope in _USER_SCOPES:
+            user_values[key] = value
+        else:
+            repo_keys.add(key)
+    overrides: list[str] = []
+    for key in sorted(repo_keys):
+        driver, _, name = key.removeprefix("filter.").rpartition(".")
+        if "=" in driver:
+            raise InputError(
+                f"O repositório {repo} define o filtro '{driver}', com '=' no nome, "
+                "que o diff-analyzer não consegue desativar."
+            )
+        default = "false" if name == "required" else ""
+        overrides += ["-c", f"{key}={user_values.get(key, default)}"]
+    return overrides
+
+
+def _git_failure(repo: Path, stderr: bytes) -> InputError:
+    detail = _first_line(stderr)
     suffix = f": {detail}" if detail else "."
-    raise InputError(f"Falha ao obter o diff do repositório {repo}{suffix}")
+    return InputError(f"Falha ao obter o diff do repositório {repo}{suffix}")
 
 
 def _run_git(git: str, repo: Path, args: list[str]) -> subprocess.CompletedProcess[bytes]:
     try:
         return subprocess.run(  # noqa: S603
-            [git, "-C", str(repo), "--no-pager", *_GIT_CONFIG, *args],
+            [git, "-C", str(repo), "--no-pager", *_GIT_CONFIG, *_NO_REPO_COMMANDS, *args],
             capture_output=True,
             check=False,
-            env={k: v for k, v in os.environ.items() if k not in _REPO_ENV_VARS},
+            env=_git_env(),
         )
     except OSError as exc:
         raise ConfigurationError(
             f"O git em {git} não pôde ser executado ({exc.strerror}). Reinstale o git."
         ) from None
+
+
+def _git_env() -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in _REPO_ENV_VARS}
+    # An empty allowlist blocks lazy fetches regardless of repo config.
+    env["GIT_ALLOW_PROTOCOL"] = ""
+    return env
 
 
 def _has_no_commits(git: str, repo: Path) -> bool:
