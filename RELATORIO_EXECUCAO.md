@@ -1,12 +1,12 @@
 # Relatório de execução: diff-analyzer
 
-Estado em 2026-11-06
+Estado em 2026-11-13
 
 ## Evolução por nível
 
 ### Básico (`p0-basico`)
 
-CLI que envia um diff (arquivo ou repositório git) a um endpoint compatível com a API da OpenAI e imprime a análise. Cada commit foi revalidado com `scripts/validate.sh`.
+CLI que envia um diff (arquivo ou repositório git) a uma LLM e imprime a análise. 
 
 | Commit | Tarefa | `validate.sh` |
 | --- | --- | --- |
@@ -23,21 +23,25 @@ CLI que envia um diff (arquivo ou repositório git) a um endpoint compatível co
 
 ### Intermediário (`p0-intermediario`)
 
-Não iniciado. Planejado: validação de formato e tamanho do diff, política de credencial, timeouts e retries, `--verbose`, Ctrl+C e validação em ambiente limpo.
+Não iniciado. Planejado: validação de formato e tamanho do diff, política de credencial, timeouts e retries, `--verbose` e Ctrl+C.
 
 ### Avançado (`p0-avancado`)
 
-Não iniciado. Planejado: bloqueio de segredos no diff, proteção contra injeção de prompt, suítes E2E com stub e com LLM real.
+Não iniciado. Planejado: bloqueio de segredos no diff, proteção contra injeção de prompt, suítes E2E.
 
 ## Decisões principais
 
 | Decisão | Alternativa considerada | Justificativa |
 | --- | --- | --- |
-| Entrada: arquivo `.diff` ou repositório git, num único argumento `SOURCE` | stdin (implementado e depois removido); GitPython | Cobre o diff recebido pronto e as mudanças locais. O `git` roda via `subprocess`, sem dependência extra, e só é exigido para repositórios. |
-| Prompt: padrão em markdown no pacote, `--prompt-file` ou `-p` inline, enviado como mensagem de sistema | Prompt com placeholder `{diff}` | O prompt muda sem editar código. O diff vai separado, entre `<diff>` e `</diff>`, e funciona com qualquer prompt. |
-| Acesso ao LLM: SDK `openai` com `base_url` configurável, neutro de provedor (URL padrão da OpenAI) e sem detecção de contexto (limite `LLM_MAX_INPUT_CHARS` previsto para o Intermediário) | `litellm`; `httpx` direto; servidor local como padrão; tokenizer | Um só código para qualquer endpoint compatível, com exceções tipadas, e a maioria usa chave de API. O protocolo não informa o contexto, e tokenizer depende do modelo. |
-| Configuração só pelo `.env` | Padrão do `pydantic-settings` (ambiente mais `.env`) | Mesma pasta, mesma configuração. Nada do shell, como `OPENAI_API_KEY`, entra sem estar no `.env`. |
+| Entrada: arquivo `.diff` ou repositório git, num único argumento `SOURCE` | stdin, GitPython | Cobre o diff recebido pronto e as mudanças locais. O `git` roda via `subprocess`, sem dependência extra. |
+| Prompt: padrão em markdown no pacote, `--prompt-file` ou `-p` inline | Prompt com placeholder `{diff}` | O prompt muda sem editar código. O diff vai separado, entre `<diff>` e `</diff>`, e funciona com qualquer prompt. |
+| Acesso ao LLM: SDK `openai` com `base_url` configurável e sem detecção de contexto | `litellm`, `httpx` direto, servidor local como padrão | Um só código para qualquer endpoint compatível. |
+| Configuração só pelo `.env` | ambiente mais `.env` | Mesma pasta, mesma configuração. |
 | Validação: `validate.sh` antes de cada commit (lockfile, ruff, mypy, pytest com cobertura acima de 90%, gitleaks) | pre-commit ou serviço de CI | Um só comando local, sem serviço externo. |
+| Erro no `.env` aponta o número da linha, não o conteúdo |  | Uma chave de API colada no lugar da linha inteira vira um "nome de chave". |
+| Endpoint nas mensagens de erro só como esquema, host e porta | | Gateways podem levar token no caminho da URL, e as mensagens vão para logs e capturas de tela. |
+| Depois de criar o cliente do SDK, zerar organização, projeto e cabeçalhos lidos do shell | Opções públicas do SDK (`default_headers`, `extra_headers`) | Um `Authorization` em `OPENAI_CUSTOM_HEADERS` substituía a chave do `.env`. As opções públicas ainda deixavam passar outros cabeçalhos, como `api-key`. O campo zerado é privado, mas a versão do `openai` é fixa e um teste compara a requisição inteira com a de um ambiente limpo. |
+| Chave ausente ou em branco barrada no cliente LLM, antes de criar o cliente do SDK, com exit 4 |  | Só o cliente LLM lê o valor da chave. O erro do SDK não cobre a chave só com espaços, que era enviada e voltava como credencial recusada (exit 5). |
 
 ## Testes e resultados
 
@@ -55,7 +59,7 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 | Credencial inválida | Stub responde 401 | Exit 5, chave não aparece | Exit 5, chave ausente da saída |
 | Falha de comunicação | Porta fechada | Exit 6 | Exit 6: `Não foi possível falar com o LLM ...` |
 | Erro do LLM | Modelo inexistente (404) e contexto excedido (400) | Exit 7 | Exit 7, mensagem de contexto |
-| Credencial ausente | `LLM_AUTH=required`, chave vazia | Exit 4 | **Falhou:** traceback, exit 1 |
+| Credencial ausente | `LLM_AUTH=required`, chave vazia | Exit 4 | **Falhou:** traceback, exit 1. Corrigido; ver reexecução abaixo |
 | Entrada fora do formato | Texto comum | Exit 3 | **Falhou:** exit 0, texto analisado |
 
 ## Falhas e limitações
@@ -63,13 +67,25 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 ### Corte silencioso do diff
 
 - **O que aconteceu:** com 4096 tokens de contexto no servidor local, um diff de 25367 caracteres voltou com HTTP 200 e só 2050 tokens lidos. A resposta cobriu somente parte dos arquivos.
-- **Como foi identificado:** comparando `usage.prompt_tokens` com o tamanho enviado.
-- **Como foi tratado:** contexto do servidor aumentado para 32768, e a resposta voltou ao normal.
 - **Por que permanece:** o protocolo não informa o corte.
+
+## Problemas Resolvidos
+
+### Segredos em mensagens de erro
+
+- **O que aconteceu:** uma chave colada no lugar da linha `LLM_API_KEY=` inteira aparecia no erro.
+- **Como foi tratado:** erros do `.env` apontam só o número da linha, e o endpoint aparece só como esquema, host e porta.
+- **O que aprendi:** qualquer parte da entrada pode conter um segredo. Mensagens de erro devem usar só dados controlados pela aplicação.
+
+### Configurações do SDK vindas do shell
+
+- **O que aconteceu:** o SDK `openai` lê `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` e `OPENAI_PROJECT_ID` do ambiente. Um `OPENAI_CUSTOM_HEADERS` com `Authorization` substituía a chave do `.env`, e enviava essa credencial.
+- **Como foi tratado:** depois de criar o cliente do SDK, organização, projeto e cabeçalhos do shell são zerados. O teste define essas variáveis e compara a requisição inteira com a de um ambiente limpo, nos dois modos de autenticação.
+- **O que aprendi:** "configuração só pelo `.env`".
 
 ## Uso de IA no desenvolvimento
 
-Harness Oh-My-Pi (OMP). Claude Opus 5.5 foi o agente principal. GPT 6.1 Sol revisou as entregas durante as sessões, como advisor do OMP, e também em sessões separadas, como revisor independente.
+As Harness Oh-My-Pi (OMP) foi a principal utilizada. Claude Opus 5.5 foi o agente principal. O GPT 6.1 Sol ajudou com revisão das entregas durante as sessões, como advisor do OMP, e também em sessões separadas, como revisor independente.
 
 | Ferramenta | Tarefa delegada | Resultado aproveitado | Correções ou alterações | Verificação |
 | --- | --- | --- | --- | --- |
@@ -82,10 +98,10 @@ Harness Oh-My-Pi (OMP). Claude Opus 5.5 foi o agente principal. GPT 6.1 Sol revi
 ## Reflexão final
 
 - **Principal aprendizado:**
-Embora o projeto seja uma ideia bem simples, para atingir um nível de qualidade alto, considerando segurança dos dados, reproducibilidade e experiência de usuário, uma série de boas práticas tiveram que surgir. Nesse caso, mesmo tendo experiência com UV, aprendi mais sobre o uso do freeze para garantir versões fixas, sobre constantemente atualizar o AGENTS.md para dar contexto para as LLMs considerando o padrões que queria para o projeto. Também verifiquei a importância de revisar manualmente o código linha a linha para entender o que estava sendo construído, visto que muitas vezes a IA seguia em direções diferentes ao que eu estava buscando, e também vi como é mais complicado do que eu esperava garantir que informações sensíveis não apareçam.
+Embora o projeto seja uma ideia bem simples, para atingir um nível de qualidade alto, considerando segurança dos dados, reproducibilidade e experiência de usuário, uma série de boas práticas tiveram que surgir. Nesse caso, mesmo tendo experiência com UV, aprendi mais sobre o uso do freeze para garantir versões fixas, sobre constantemente atualizar o AGENTS.md para dar contexto para as LLMs considerando o padrões que queria para o projeto. Também verifiquei a importância de revisar manualmente o código linha a linha para entender o que estava sendo construído, visto que muitas vezes a IA seguia em direções diferentes ao que eu estava buscando, e também vi como é mais complicado do que eu esperava garantir que informações sensíveis não apareçam nas saídas.
 
 - **Competência mais desenvolvida:** 
 Segurança de informações sensíveis, visto que primeiramente acreditava que usando somente .env as informações estariam seguras, mas pesquisando mais a fundo vi como hávia outras práticas importantes de segurança, como evitar mensagens de erros automáticas sem validação e uso de Gitleaks. 
 
 - **Aspecto que ainda precisa ser aprimorado:** 
-Um dos principais problemas é em relação a limite de contexto do servidor e possibilidade de prompt-injection. Atualmente não há mensagem de erro consistente caso o contexto do diff seja maior que do servidor, nem técnicas mais robustar para ajudar a evitar prompt-injection, embora provavelmente não seja possível resolve-lo 100%.
+Um dos principais problemas é em relação a limite de contexto do servidor e possibilidade de prompt-injection. Atualmente não há mensagem de erro consistente caso o contexto do diff seja maior que do servidor, nem técnicas mais robustas para ajudar a evitar prompt-injection, embora provavelmente não seja possível resolve-lo 100%.

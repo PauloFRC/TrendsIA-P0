@@ -1,8 +1,3 @@
-# Local agent
-.agents/
-kanban/
-AGENTS.local.md
-
 # Secrets
 .env
 .env.*
