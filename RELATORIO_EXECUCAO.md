@@ -1,6 +1,6 @@
 # Relatório de execução: diff-analyzer
 
-Estado em 2026-11-13
+Estado em 2026-11-19
 
 ## Evolução por nível
 
@@ -10,16 +10,18 @@ CLI que envia um diff (arquivo ou repositório git) a uma LLM e imprime a análi
 
 | Commit | Tarefa | `validate.sh` |
 | --- | --- | --- |
-| `e9ef152` | Scaffold: `uv`, versões exatas, `.env.example`, `validate.sh`, prompt padrão | Falha (mypy) |
-| `a226bf7` | Hierarquia de erros com códigos de saída 3 a 7 | 8 testes, 100% |
-| `79227c4` | Configuração só pelo `.env`, sem exibir valores em erros | 40 testes, 99,09% |
-| `74eebc5` | Diff de arquivo ou git (`HEAD`, `--staged`, `--commit`, `--range`) | 96 testes, 99,11% |
-| `aacc991` | Prompt padrão, `-p`, `--prompt-file`; diff entre `<diff>` e `</diff>` | 117 testes, 98,91% |
-| `266b27b` | Cliente LLM com SDK `openai`, `FakeLLMClient`, erros HTTP | 139 testes, 99,10% |
-| `174fd55` | Orquestração; diff vazio barrado antes do LLM | Falha (`ruff format`) |
-| `cda72cb` | CLI com argparse; stdin removido | 155 testes, 99,26% |
-| `15a53ca` | Erro claro quando o servidor rejeita o diff por contexto | 157 testes, 99,28% |
-| `46106e5` | Neutralidade de provedor; exemplo e execuções reais | 160 testes, 99,28% |
+| `e9ef152` | Falha (mypy) |
+| `a226bf7` | 8 testes, 100% |
+| `79227c4` | 40 testes, 99,09% |
+| `74eebc5` | 96 testes, 99,11% |
+| `aacc991` | 117 testes, 98,91% |
+| `266b27b` | 139 testes, 99,10% |
+| `174fd55` | Falha (`ruff format`) |
+| `cda72cb` | 155 testes, 99,26% |
+| `15a53ca` | 157 testes, 99,28% |
+| `46106e5` | 160 testes, 99,28% |
+| `4af3d63` | 196 testes, 99,39% |
+| `06d5e2c` | 197 testes, 99,23% |
 
 ### Intermediário (`p0-intermediario`)
 
@@ -37,19 +39,22 @@ Não iniciado. Planejado: bloqueio de segredos no diff, proteção contra injeç
 | Prompt: padrão em markdown no pacote, `--prompt-file` ou `-p` inline | Prompt com placeholder `{diff}` | O prompt muda sem editar código. O diff vai separado, entre `<diff>` e `</diff>`, e funciona com qualquer prompt. |
 | Acesso ao LLM: SDK `openai` com `base_url` configurável e sem detecção de contexto | `litellm`, `httpx` direto, servidor local como padrão | Um só código para qualquer endpoint compatível. |
 | Configuração só pelo `.env` | ambiente mais `.env` | Mesma pasta, mesma configuração. |
-| Validação: `validate.sh` antes de cada commit (lockfile, ruff, mypy, pytest com cobertura acima de 90%, gitleaks) | pre-commit ou serviço de CI | Um só comando local, sem serviço externo. |
+| Validação: `validate.sh` antes de cada commit (lockfile, ruff, mypy, pytest, gitleaks); cobertura acima de 90% | pre-commit ou serviço de CI | Um só comando local, sem serviço externo. |
 | Erro no `.env` aponta o número da linha, não o conteúdo |  | Uma chave de API colada no lugar da linha inteira vira um "nome de chave". |
 | Endpoint nas mensagens de erro só como esquema, host e porta | | Gateways podem levar token no caminho da URL, e as mensagens vão para logs e capturas de tela. |
 | Depois de criar o cliente do SDK, zerar organização, projeto e cabeçalhos lidos do shell | Opções públicas do SDK (`default_headers`, `extra_headers`) | Um `Authorization` em `OPENAI_CUSTOM_HEADERS` substituía a chave do `.env`. As opções públicas ainda deixavam passar outros cabeçalhos, como `api-key`. O campo zerado é privado, mas a versão do `openai` é fixa e um teste compara a requisição inteira com a de um ambiente limpo. |
 | Chave ausente ou em branco barrada no cliente LLM, antes de criar o cliente do SDK, com exit 4 |  | Só o cliente LLM lê o valor da chave. O erro do SDK não cobre a chave só com espaços, que era enviada e voltava como credencial recusada (exit 5). |
+| Limite de entrada: `LLM_MAX_INPUT_CHARS=60000` é uma guarda de tamanho em caracteres, não uma garantia de contexto do modelo | 
+| Política de credencial: `LLM_AUTH` explícito (`required` ou `none`), nunca inferido da URL | inferir pela URL; exigir chave sempre | Gateways locais podem exigir chave e servidores self-hosted remotos podem não exigir. `required` sem chave aborta antes de qualquer chamada de rede (exit 4, sem exibir valor); `none` envia um marcador interno e nunca lê `LLM_API_KEY`; 401/403 dá exit 5 e, com `none`, a mensagem sugere `LLM_AUTH=required`. |
+| Testes HTTP no nível do SDK: transporte `httpx2.MockTransport` injetado com `openai.DefaultHttpxClient(transport=...)` | `respx` | O SDK `openai` 3.x usa `httpx2` e o `respx` intercepta apenas o `httpx` clássico: interceptou 0 requisições do SDK quando testado. |
 
 ## Testes e resultados
 
-Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (Ollama 0.31.1), `qwen2.5-coder:7b`, `temperature=0`, `seed=42`. Os casos 401 e de contexto usaram um servidor stub local.
+Validação completa sobre `06d5e2c` (2026-11-19). As execuções com LLM real abaixo foram feitas sobre `46106e5`.
 
 | Teste | Entrada ou situação | Resultado esperado | Resultado obtido |
 | --- | --- | --- | --- |
-| Validação completa | `./scripts/validate.sh` | Todos os gates passam | 160 testes, cobertura 99,28%, gitleaks sem vazamentos |
+| Validação completa | `./scripts/validate.sh` | Todos os gates passam | 197 testes, cobertura 99,23% sobre `06d5e2c` |
 | Entrada válida | `examples/exemplo.diff`; `. --commit 15a53ca` | Análise em português, exit 0 | Exit 0 nos dois, quatro seções em português |
 | Reprodutibilidade | Mesmo arquivo duas vezes | Saídas iguais (não garantido) | Idênticas e iguais ao exemplo do README |
 | Sem chamada real | Diff vazio com `FakeLLMClient` | Erro, fake nunca chamado | Passou, 0 chamadas |
@@ -59,8 +64,8 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 | Credencial inválida | Stub responde 401 | Exit 5, chave não aparece | Exit 5, chave ausente da saída |
 | Falha de comunicação | Porta fechada | Exit 6 | Exit 6: `Não foi possível falar com o LLM ...` |
 | Erro do LLM | Modelo inexistente (404) e contexto excedido (400) | Exit 7 | Exit 7, mensagem de contexto |
-| Credencial ausente | `LLM_AUTH=required`, chave vazia | Exit 4 | **Falhou:** traceback, exit 1. Corrigido; ver reexecução abaixo |
-| Entrada fora do formato | Texto comum | Exit 3 | **Falhou:** exit 0, texto analisado |
+| Credencial ausente | `LLM_AUTH=required`, chave vazia | Exit 4 | **Falhou:** traceback, exit 1. Corrigido: reexecutado em 2026-11-19 sobre `06d5e2c`, exit 4 com mensagem clara, sem traceback |
+| Entrada fora do formato | Texto comum | Exit 3 | **Falhou:** exit 0, texto analisado. Permanece no código atual: verificado em 2026-11-19, o texto comum passa da validação e chega à chamada do LLM |
 
 ## Falhas e limitações
 
@@ -68,6 +73,11 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 
 - **O que aconteceu:** com 4096 tokens de contexto no servidor local, um diff de 25367 caracteres voltou com HTTP 200 e só 2050 tokens lidos. A resposta cobriu somente parte dos arquivos.
 - **Por que permanece:** o protocolo não informa o corte.
+
+### Texto comum aceito como diff
+
+- **O que aconteceu:** um arquivo de texto comum é aceito como entrada e enviado ao LLM; a validação rejeita apenas entrada vazia e acima de `LLM_MAX_INPUT_CHARS`.
+- **Por que permanece:** a verificação de formato é planejada para o p0-intermediario.
 
 ## Problemas Resolvidos
 
@@ -86,7 +96,7 @@ Execuções sobre `46106e5`. LLM real: servidor local compatível com a OpenAI (
 ### Comandos do Git definidos pelo repositório
 
 - **O que aconteceu:** ao gerar um diff de um repositório recebido como pasta, o Git podia executar comandos definidos pelo próprio repositório.
-- **Como foi tratado:** a CLI desativa o monitor de arquivos, os hooks e a verificação de assinaturas durante a geração do diff. Também neutraliza filtros definidos pelo repositório, impede a busca de objetos ausentes e mostra apenas as mudanças de referência dos submódulos.
+- **Como foi tratado:** a CLI desativa o monitor de arquivos, os hooks e a verificação de assinaturas durante a geração do diff. Também neutraliza filtros definidos pelo repositório, impede a busca de objetos ausentes e mostra apenas as mudanças de referência dos submódulos. No modo padrão, ainda confirma que a raiz do diretório de trabalho coincide com a entrada `.git` mais próxima.
 - **Limites:** não é um isolamento completo do Git. Filtros da configuração do usuário ou do sistema ainda podem ser usados.
 
 ## Uso de IA no desenvolvimento
