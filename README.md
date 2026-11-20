@@ -16,6 +16,7 @@ uv run --frozen diff-analyzer examples/exemplo.diff
 - Um endpoint de LLM compatível com a API de Chat Completions da OpenAI.
 - git 2.26 ou superior, para analisar um repositório.
 - [gitleaks](https://github.com/gitleaks/gitleaks#installing) 8.19 ou superior, para `scripts/validate.sh`.
+- Docker, para a execução em container.
 
 ## Acesso ao LLM
 
@@ -61,6 +62,17 @@ uv run --frozen diff-analyzer . --commit HEAD > analise.md
 ```
 
 Veja todas as opções com `uv run --frozen diff-analyzer --help`.
+
+## Execução em container
+
+A imagem analisa `examples/exemplo.diff`.
+
+```bash
+cp .env.example .env.container
+docker build -t diff-analyzer:latest .
+docker run --rm diff-analyzer:latest
+docker save --output diff-analyzer.tar diff-analyzer:latest
+```
 
 ## Exemplo de entrada e saída
 

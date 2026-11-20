@@ -1,0 +1,9 @@
+*
+!src/
+!examples/
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!.env.container
+**/__pycache__

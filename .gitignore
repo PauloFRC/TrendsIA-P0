@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 
+*.tar
+
 # Python and uv
 .venv/
 __pycache__/
