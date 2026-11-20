@@ -60,6 +60,8 @@ class OpenAIClient:
                 )
         else:
             api_key = _NO_AUTH_KEY
+        if http_client is None and not settings.tls_verify:
+            http_client = openai.DefaultHttpxClient(verify=False)
         self._settings = settings
         self._sdk = openai.OpenAI(
             base_url=settings.base_url, api_key=api_key, http_client=http_client

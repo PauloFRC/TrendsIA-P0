@@ -88,6 +88,22 @@ def test_answer_goes_to_stdout_with_a_final_newline(
     assert user_message(client) == f"<diff>\n{FILE_DIFF}</diff>"
 
 
+def test_disabled_tls_verification_warns_on_stderr_before_building_the_client(
+    diff_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(".env").write_text("LLM_MODEL=modelo:teste\nLLM_TLS_VERIFY=false\n", encoding="utf-8")
+
+    def factory(settings: Settings) -> FakeLLMClient:
+        out, err = capsys.readouterr()
+        assert out == ""
+        assert "TLS" in err
+        return FakeLLMClient(LLMResponse("Troca a por b.", "stop"))
+
+    code = main([str(diff_file)], client_factory=factory)
+
+    assert code == 0
+
+
 def test_answer_ending_in_newline_gets_no_extra_one(
     diff_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

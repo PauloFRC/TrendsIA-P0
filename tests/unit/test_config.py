@@ -41,6 +41,7 @@ def test_keys_missing_from_env_use_code_defaults() -> None:
     assert settings.data_egress == "external"
     assert settings.timeout_connect == 5
     assert settings.timeout_read == 120
+    assert settings.tls_verify is True
     assert settings.temperature == 0
     assert settings.seed == 42
     assert settings.max_input_chars == 60000
@@ -59,6 +60,12 @@ def test_env_value_overrides_default_and_missing_key_keeps_default() -> None:
     assert settings.base_url == "https://api.openai.com/v1"
 
 
+def test_tls_verification_can_be_disabled_from_env() -> None:
+    write_env("LLM_MODEL=modelo:teste\nLLM_TLS_VERIFY=false\n")
+
+    assert load_settings().tls_verify is False
+
+
 @pytest.mark.parametrize("text", ["", "LLM_MODEL=\n", "LLM_AUTH=none\n"])
 def test_model_has_no_default_and_must_be_set_in_env(
     monkeypatch: pytest.MonkeyPatch, text: str
@@ -73,12 +80,14 @@ def test_model_has_no_default_and_must_be_set_in_env(
 def test_process_environment_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "from-environ")
     monkeypatch.setenv("LLM_API_KEY", SENTINEL)
+    monkeypatch.setenv("LLM_TLS_VERIFY", "false")
     write_env("LLM_MODEL=modelo:teste\nLLM_AUTH=none\n")
 
     settings = load_settings()
 
     assert settings.model == "modelo:teste"
     assert settings.api_key.get_secret_value() == ""
+    assert settings.tls_verify is True
 
 
 def test_env_file_does_not_interpolate_process_environment(
@@ -128,6 +137,7 @@ def test_base_url_is_kept_as_written() -> None:
         "LLM_BASE_URL",
         "LLM_TIMEOUT_CONNECT",
         "LLM_TIMEOUT_READ",
+        "LLM_TLS_VERIFY",
         "LLM_TEMPERATURE",
         "LLM_SEED",
         "LLM_MAX_INPUT_CHARS",

@@ -31,6 +31,7 @@ _REASONS = {
     "data_egress": "use local ou external",
     "timeout_connect": "use um número de segundos maior que 0",
     "timeout_read": "use um número de segundos maior que 0",
+    "tls_verify": "use true ou false",
     "temperature": "use um número entre 0 e 2",
     "seed": "use um inteiro maior ou igual a 0",
     "max_input_chars": "use um inteiro maior ou igual a 1",
@@ -85,6 +86,7 @@ class Settings(BaseSettings):
     data_egress: DataEgress = "external"
     timeout_connect: float = Field(default=5, gt=0)
     timeout_read: float = Field(default=120, gt=0)
+    tls_verify: bool = True
     temperature: float = Field(default=0, ge=0, le=2)
     seed: int = Field(default=42, ge=0)
     max_input_chars: int = Field(default=60000, ge=1)

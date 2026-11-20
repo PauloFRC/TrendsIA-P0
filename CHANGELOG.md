@@ -15,6 +15,7 @@ Primeira versão (tag `p0-basico`): a CLI envia um diff a um LLM e imprime uma a
 - O git não executa comandos configurados pelo repositório analisado: fsmonitor, hooks, filtros, verificação de assinatura, download de objetos ausentes e diff externo em submódulos.
 - No modo padrão, a CLI rejeita o repositório se o Git indicar uma raiz diferente da raiz do checkout selecionado.
 - `Dockerfile` e `.dockerignore`: a imagem analisa `examples/exemplo.diff` com a configuração de `.env.container`.
+- `LLM_TLS_VERIFY` no `.env`: `false` desliga a verificação do certificado TLS do endpoint. Default é `true`.
 
 ### Limitações conhecidas
 

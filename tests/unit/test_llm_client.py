@@ -1,12 +1,16 @@
-"""Tests for the OpenAI-compatible LLM client, over a mocked HTTP transport."""
+"""Tests for the OpenAI-compatible LLM client over mocked HTTP and local HTTPS."""
 
 import json
-from collections.abc import Callable
+import ssl
+from collections.abc import Callable, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import httpx2
 import openai
 import pytest
+import trustme
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import SecretStr
 
@@ -52,6 +56,55 @@ def completion(content: str | None = "Análise.", finish_reason: str = "stop") -
             ],
         },
     )
+
+
+class _ChatHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        if self.path != "/v1/chat/completions":
+            self.send_error(404)
+            return
+        self.rfile.read(int(self.headers["Content-Length"]))
+        body = completion().content
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def mismatched_https_endpoint(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    trustme.CA().issue_cert("ingress.local").configure_cert(context)
+    with ThreadingHTTPServer(("127.0.0.1", 0), _ChatHandler) as server:
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"https://127.0.0.1:{server.server_port}/v1"
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_tls_verification_rejects_untrusted_mismatched_certificate_by_default(
+    mismatched_https_endpoint: str,
+) -> None:
+    settings = Settings(base_url=mismatched_https_endpoint, model="m", auth="none")
+
+    with pytest.raises(LLMUnreachableError):
+        OpenAIClient(settings).complete(MESSAGES)
+
+
+def test_tls_verification_can_be_disabled_for_untrusted_mismatched_certificate(
+    mismatched_https_endpoint: str,
+) -> None:
+    settings = Settings(
+        base_url=mismatched_https_endpoint, model="m", auth="none", tls_verify=False
+    )
+
+    assert OpenAIClient(settings).complete(MESSAGES) == LLMResponse("Análise.", "stop")
 
 
 def client_for(settings: Settings, handler: Handler) -> LLMClient:

@@ -58,7 +58,12 @@ def main(argv: list[str] | None = None, *, client_factory: ClientFactory = OpenA
         return int(exc.code or 0)
     try:
         request = AnalysisRequest(args.source, _git_mode(args), _prompt_source(args))
-        client = client_factory(load_settings())
+        settings = load_settings()
+        if not settings.tls_verify:
+            sys.stderr.write(
+                "Aviso: a verificação do certificado TLS está desligada (LLM_TLS_VERIFY=false).\n"
+            )
+        client = client_factory(settings)
         response = analyze(request, client)
     except DiffAnalyzerError as exc:
         sys.stderr.write(f"Erro: {exc}\n")
